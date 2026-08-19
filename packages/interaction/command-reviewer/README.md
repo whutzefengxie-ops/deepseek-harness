@@ -32,7 +32,7 @@ The plugin registers the `command-reviewer` settings namespace when a settings s
 | `prompt` | built-in review instructions | Review instructions; `{transcript}` marks where the conversation goes, otherwise the transcript is appended. |
 | `context` | `''` | Deployment-level scenario context appended as a labelled section. |
 | `maxTranscriptChars` | `200000` | Tail-keep bound in characters for the rendered transcript. |
-| `maxOutputBytes` | `65536` | Complete byte cap for the streamed Codex JSONL output. |
+| `maxOutputBytes` | `8388608` | Complete byte cap for the streamed Codex JSONL output; large enough for repository inspection while still terminating runaway output. |
 | `terminateGraceMs` | `3000` | Escalation grace in milliseconds for process-tree termination; bounded by the Node timer maximum. |
 
 The prompt never rides argv — it crosses the subprocess seam as batch stdin, so no conversation text enters a shell boundary. The model identifier is validated before it can reach the Windows `cmd.exe` wrapper. Stdout is a streamed JSONL pipe, while stderr remains a bounded diagnostic tail. The Codex run is non-interactive, ephemeral, color-stripped, and allowed outside Git repositories; it runs in the session's working directory (the process directory when the session carries none).

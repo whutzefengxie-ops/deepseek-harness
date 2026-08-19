@@ -32,7 +32,7 @@ Web 客户端把这些事件重建为一张独立审查卡片。卡片展示真�
 | `prompt` | 内置审查指令 | 审查指令；`{transcript}` 标记对话记录插入的位置，不含占位符时对话记录追加在末尾。 |
 | `context` | `''` | 追加为带标签段落的部署级场景上下文。 |
 | `maxTranscriptChars` | `200000` | 对话记录渲染文本的尾部保留上限（字符数）。 |
-| `maxOutputBytes` | `65536` | 流式 Codex JSONL 完整输出的字节上限。 |
+| `maxOutputBytes` | `8388608` | 流式 Codex JSONL 完整输出的字节上限；可容纳仓库检查，同时仍会终止失控输出。 |
 | `terminateGraceMs` | `3000` | 进程树终止的升级宽限（毫秒）；受 Node 定时器上限约束。 |
 
 提示词从不放进 argv。它以批量 stdin 的形式穿过子进程 seam，因此任何对话文本都不会进入 shell 边界。模型标识符在进入 Windows `cmd.exe` 包装层之前会先经过验证。stdout 使用流式 JSONL 管道，stderr 则保留有界诊断尾部。Codex 运行是非交互、临时（ephemeral）、去除颜色、允许在 Git 仓库之外执行的；它在会话的工作目录（会话没有工作目录时用进程目录）中运行。

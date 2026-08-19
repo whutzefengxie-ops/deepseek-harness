@@ -54,7 +54,7 @@ const STDERR_QUOTE_CHARS = 400
 /** Default tail-keep bound in characters for the rendered transcript. */
 const DEFAULT_MAX_TRANSCRIPT_CHARS = 200_000
 /** Default complete JSONL output cap in bytes. */
-const DEFAULT_MAX_OUTPUT_BYTES = 65_536
+const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608
 /** Default escalation grace in milliseconds for process-tree termination. */
 const DEFAULT_TERMINATE_GRACE_MS = 3_000
 

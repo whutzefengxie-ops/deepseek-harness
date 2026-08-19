@@ -325,6 +325,27 @@ describe('/review durable background lifecycle', () => {
     }
   })
 
+  it('accepts repository inspection output above 64 KiB with the default cap', async () => {
+    const test = await harness()
+    seed(test)
+    const command = JSON.stringify({
+      type: 'item.completed',
+      item: {
+        id: 'large-command',
+        type: 'command_execution',
+        command: 'git diff',
+        aggregated_output: 'x'.repeat(70_000),
+      },
+    })
+    test.subprocess.nextStdout = `${command}\n${reviewJson('Large review completed.')}`
+
+    await run(test)
+
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'completed', text: 'Large review completed.',
+    })
+  })
+
   it('accepts collected stdout without a final newline and enforces its byte cap', async () => {
     const success = await harness()
     seed(success)

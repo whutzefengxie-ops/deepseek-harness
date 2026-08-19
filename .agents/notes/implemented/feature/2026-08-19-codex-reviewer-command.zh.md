@@ -32,7 +32,7 @@ codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [
 
 ### `command-reviewer` 设置节承载全部可调项
 
-插件注册 `command-reviewer` 设置命名空间（基础层 = 组合入口），schema 为：`enabled`（卡片开关；关闭时命令拒绝执行）、`model`（留空，或使用仅包含字母、数字、`.`、`_`、`:`、`/`、`@`、`+` 和 `-` 的可移植标识符）、`thinkingEffort`（`low|medium|high`）、`sandbox`、`prompt`（`{transcript}` 占位符标记对话记录插入位置，不含占位符时对话记录追加在末尾）、`context`（部署级场景补充）、`maxTranscriptChars`、`maxOutputBytes` 与 `terminateGraceMs`（受 Node 定时器上限约束）。`@deepseek-ai/dsh-client-ui-settings-plugins` 在设置页的“插件”区渲染「审查者」卡片。它与“终端”“Agent 循环”“网页搜索”使用相同的卡片界面，包括启用开关、思考程度与沙箱的下拉框、提示词与上下文的文本域。部署未组合该插件时，卡片不渲染任何内容。
+插件注册 `command-reviewer` 设置命名空间（基础层 = 组合入口），schema 为：`enabled`（卡片开关；关闭时命令拒绝执行）、`model`（留空，或使用仅包含字母、数字、`.`、`_`、`:`、`/`、`@`、`+` 和 `-` 的可移植标识符）、`thinkingEffort`（`low|medium|high`）、`sandbox`、`prompt`（`{transcript}` 占位符标记对话记录插入位置，不含占位符时对话记录追加在末尾）、`context`（部署级场景补充）、`maxTranscriptChars`、`maxOutputBytes` 与 `terminateGraceMs`（受 Node 定时器上限约束）。`maxOutputBytes` 默认为 8 MiB，可容纳仓库检查产生的命令输出，同时仍会限制失控进程。`@deepseek-ai/dsh-client-ui-settings-plugins` 在设置页的“插件”区渲染「审查者」卡片。它与“终端”“Agent 循环”“网页搜索”使用相同的卡片界面，包括启用开关、思考程度与沙箱的下拉框、提示词与上下文的文本域。部署未组合该插件时，卡片不渲染任何内容。
 
 ### 命令完全不进入被审查 agent 的模型流
 
