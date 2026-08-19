@@ -146,6 +146,47 @@ export function textField(field: string): CardFieldSpec {
 }
 
 /**
+ * A single-choice field over one fixed option set. An empty draft clears the
+ * field; a draft outside the option set blocks the save (a control never
+ * offers such a draft, but a stored value the schema no longer carries does).
+ * @param field - field name inside the namespace section.
+ * @param options - the values this field accepts.
+ * @returns the field's conversion spec.
+ */
+export function selectField(field: string, options: readonly string[]): CardFieldSpec {
+  const accepted = new Set(options)
+  return {
+    field,
+    format: value => typeof value === 'string' && accepted.has(value) ? value : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return { kind: 'clear' }
+      return accepted.has(trimmed) ? { kind: 'set', value: trimmed } : undefined
+    },
+  }
+}
+
+/**
+ * A boolean field. The draft vocabulary is the strings `'true'`/`'false'`; an
+ * empty draft clears the field.
+ * @param field - field name inside the namespace section.
+ * @returns the field's conversion spec.
+ */
+export function boolField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => typeof value === 'boolean' ? String(value) : '',
+    parse: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return { kind: 'clear' }
+      if (trimmed === 'true') return { kind: 'set', value: true }
+      if (trimmed === 'false') return { kind: 'set', value: false }
+      return undefined
+    },
+  }
+}
+
+/**
  * Stages one card's edits over one settings namespace and writes them on save.
  *
  * The form publishes through a snapshot store because slot components read

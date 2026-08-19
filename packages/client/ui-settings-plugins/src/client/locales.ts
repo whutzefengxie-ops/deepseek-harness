@@ -11,6 +11,16 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'reviewerTitle' | 'reviewerDescription'
+  | 'reviewerEnabled' | 'reviewerEnabledHint' | 'reviewerEnabledOn' | 'reviewerEnabledOff'
+  | 'reviewerModel' | 'reviewerModelHint' | 'reviewerModelPlaceholder'
+  | 'reviewerThinkingEffort' | 'reviewerThinkingEffortHint'
+  | 'reviewerSandbox' | 'reviewerSandboxHint'
+  | 'reviewerPrompt' | 'reviewerPromptHint'
+  | 'reviewerContext' | 'reviewerContextHint'
+  | 'reviewerSelectPlaceholder'
+  | 'reviewerEffortLow' | 'reviewerEffortMedium' | 'reviewerEffortHigh'
+  | 'reviewerSandboxReadOnly' | 'reviewerSandboxWorkspaceWrite' | 'reviewerSandboxFullAccess'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +61,30 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  reviewerTitle: 'Reviewer',
+  reviewerDescription: 'Reviews the agent output in this conversation with the local Codex CLI.',
+  reviewerEnabled: 'Enable reviewer',
+  reviewerEnabledHint: 'When off, the /review command refuses to run.',
+  reviewerEnabledOn: 'Enabled',
+  reviewerEnabledOff: 'Disabled',
+  reviewerModel: 'Codex model',
+  reviewerModelHint: 'The model passed to codex exec. Use only letters, digits, ._:/@+-, or leave blank for the Codex default.',
+  reviewerModelPlaceholder: 'Codex default model',
+  reviewerThinkingEffort: 'Thinking effort',
+  reviewerThinkingEffortHint: 'The reasoning effort Codex uses when producing the review.',
+  reviewerSandbox: 'Sandbox',
+  reviewerSandboxHint: 'The sandbox policy applied to commands Codex runs during the review.',
+  reviewerPrompt: 'Review prompt',
+  reviewerPromptHint: 'Review instructions. {transcript} is replaced by the conversation; without it the conversation is appended.',
+  reviewerContext: 'Scenario context',
+  reviewerContextHint: 'Extra context appended to the prompt for specific scenarios. Leave blank to append none.',
+  reviewerSelectPlaceholder: 'Use the default',
+  reviewerEffortLow: 'Low',
+  reviewerEffortMedium: 'Medium',
+  reviewerEffortHigh: 'High',
+  reviewerSandboxReadOnly: 'Read-only',
+  reviewerSandboxWorkspaceWrite: 'Workspace write',
+  reviewerSandboxFullAccess: 'Full access',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +126,28 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  reviewerTitle: '审查者',
+  reviewerDescription: '使用本地 Codex CLI 审查当前会话中 agent 的输出。',
+  reviewerEnabled: '启用审查者',
+  reviewerEnabledHint: '关闭后，/review 命令会拒绝执行。',
+  reviewerEnabledOn: '已启用',
+  reviewerEnabledOff: '已停用',
+  reviewerModel: 'Codex 模型',
+  reviewerModelHint: '传给 codex exec 的模型标识符，仅可包含字母、数字和 ._:/@+-；留空使用 Codex 默认模型。',
+  reviewerModelPlaceholder: 'Codex 默认模型',
+  reviewerThinkingEffort: '思考程度',
+  reviewerThinkingEffortHint: 'Codex 生成审查时的推理投入程度。',
+  reviewerSandbox: '沙箱',
+  reviewerSandboxHint: '审查期间 Codex 运行命令时应用的沙箱策略。',
+  reviewerPrompt: '审查提示词',
+  reviewerPromptHint: '审查指令；{transcript} 会被替换为对话记录，不含占位符时对话记录追加在末尾。',
+  reviewerContext: '场景上下文',
+  reviewerContextHint: '针对特定场景追加到提示词的补充信息，留空不追加。',
+  reviewerSelectPlaceholder: '使用默认值',
+  reviewerEffortLow: '低',
+  reviewerEffortMedium: '中',
+  reviewerEffortHigh: '高',
+  reviewerSandboxReadOnly: '只读',
+  reviewerSandboxWorkspaceWrite: '工作区可写',
+  reviewerSandboxFullAccess: '完全访问',
 }

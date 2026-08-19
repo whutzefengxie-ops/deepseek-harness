@@ -5,13 +5,14 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { CardForm, numberField, textField } from '../src/client/card-form.ts'
+import { boolField, CardForm, numberField, selectField, textField } from '../src/client/card-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import {
   SettingsDescribeMirror, type SettingsMirrorSnapshot,
 } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
+import { ReviewerCardController, type ReviewerSettings } from '../src/client/reviewer-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -274,6 +275,96 @@ describe('CardForm', () => {
     host.publish({ status: 'unavailable' })
 
     expect(subject.shell()).toMatchObject({ available: false, writable: false })
+  })
+
+  it('keeps a select field clean on an accepted value and writes it on save', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    acceptWrites(host)
+    const subject = new CardForm(host.scope, [selectField('sandbox', ['read-only', 'workspace-write'])])
+    host.publish({ status: 'ready', writable: true, value: { sandbox: 'read-only' }, user: {} })
+
+    subject.actions().edit('sandbox', 'workspace-write')
+    await subject.save()
+
+    expect(host.set.mock.calls).toEqual([['sandbox', 'workspace-write']])
+  })
+
+  it('blocks a select draft outside the option set', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new CardForm(host.scope, [selectField('sandbox', ['read-only', 'workspace-write'])])
+    host.publish({ status: 'ready', writable: true, value: { sandbox: 'read-only' }, user: {} })
+
+    subject.actions().edit('sandbox', 'danger-full-access')
+
+    expect(subject.field('sandbox')).toEqual({ text: 'danger-full-access', overridden: false, invalid: true })
+    expect(subject.shell().invalid).toBe(true)
+    await subject.save()
+
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
+  it('clears a select field by emptying it', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    acceptWrites(host)
+    const subject = new CardForm(host.scope, [selectField('sandbox', ['read-only', 'workspace-write'])])
+    host.publish({ status: 'ready', writable: true, value: { sandbox: 'read-only' }, user: { sandbox: 'read-only' } })
+
+    subject.actions().edit('sandbox', '')
+    await subject.save()
+
+    expect(host.unset.mock.calls).toEqual([['sandbox']])
+  })
+
+  it('renders a select value the option set no longer carries as an empty draft', () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new CardForm(host.scope, [selectField('sandbox', ['read-only', 'workspace-write'])])
+    host.publish({ status: 'ready', writable: true, value: { sandbox: 'stale' }, user: {} })
+
+    expect(subject.field('sandbox').text).toBe('')
+  })
+
+  it('writes a boolean field as a real boolean and clears it on empty', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    acceptWrites(host)
+    const subject = new CardForm(host.scope, [boolField('enabled')])
+    host.publish({ status: 'ready', writable: true, value: { enabled: true }, user: {} })
+
+    expect(subject.field('enabled').text).toBe('true')
+    subject.actions().edit('enabled', 'false')
+    await subject.save()
+
+    expect(host.set.mock.calls).toEqual([['enabled', false]])
+
+    subject.actions().edit('enabled', 'true')
+    await subject.save()
+
+    expect(host.set.mock.calls).toEqual([['enabled', false], ['enabled', true]])
+
+    subject.actions().edit('enabled', '')
+    await subject.save()
+
+    expect(host.unset.mock.calls).toEqual([['enabled']])
+  })
+
+  it('blocks a boolean draft outside the true/false vocabulary', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new CardForm(host.scope, [boolField('enabled')])
+    host.publish({ status: 'ready', writable: true, value: { enabled: true }, user: {} })
+
+    subject.actions().edit('enabled', 'yes')
+
+    expect(subject.field('enabled').invalid).toBe(true)
+    await subject.save()
+
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
+  it('renders an absent boolean as an empty draft', () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new CardForm(host.scope, [boolField('enabled')])
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+
+    expect(subject.field('enabled').text).toBe('')
   })
 })
 
@@ -540,6 +631,77 @@ describe('WebSearchCardController', () => {
 
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
     expect(credentials.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('ReviewerCardController', () => {
+  it('projects every field and saves them in one write pass', async () => {
+    const host = stubSettingsScope<ReviewerSettings>()
+    acceptWrites(host)
+    const controller = new ReviewerCardController(host.scope)
+    host.publish({
+      status: 'ready',
+      writable: true,
+      value: { enabled: true, model: '', thinkingEffort: 'medium', sandbox: 'read-only', prompt: '', context: '' },
+      base: { enabled: true, thinkingEffort: 'medium', sandbox: 'read-only' },
+      user: {},
+    })
+    const face = controller.inject()
+
+    expect(face.hooks.reviewerCard.getSnapshot()).toMatchObject({
+      available: true,
+      writable: true,
+      enabled: { text: 'true', overridden: false },
+      model: { text: '' },
+      thinkingEffort: { text: 'medium' },
+      sandbox: { text: 'read-only' },
+      prompt: { text: '' },
+      context: { text: '' },
+    })
+
+    face.edit('enabled', 'false')
+    face.edit('model', 'gpt-5.1-codex-max')
+    face.edit('thinkingEffort', 'high')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(3) })
+
+    expect(host.set.mock.calls).toEqual([
+      ['enabled', false],
+      ['model', 'gpt-5.1-codex-max'],
+      ['thinkingEffort', 'high'],
+    ])
+    expect(face.hooks.reviewerCard.getSnapshot().dirty).toBe(false)
+  })
+
+  it('stages a reset and applies it on save', async () => {
+    const host = stubSettingsScope<ReviewerSettings>()
+    acceptWrites(host)
+    const controller = new ReviewerCardController(host.scope)
+    host.publish({
+      status: 'ready',
+      writable: true,
+      value: { enabled: false, model: 'gpt-5.1-codex-mini', thinkingEffort: 'high', sandbox: 'workspace-write', prompt: 'Be strict.', context: '' },
+      base: { enabled: true, thinkingEffort: 'medium', sandbox: 'read-only' },
+      user: { enabled: false, model: 'gpt-5.1-codex-mini', thinkingEffort: 'high', sandbox: 'workspace-write', prompt: 'Be strict.' },
+    })
+    const face = controller.inject()
+
+    face.resetField('enabled')
+    expect(face.hooks.reviewerCard.getSnapshot().enabled).toEqual({ text: 'true', overridden: false, invalid: false })
+
+    face.save()
+    await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('enabled') })
+
+    expect(face.hooks.reviewerCard.getSnapshot().dirty).toBe(false)
+  })
+
+  it('reports a read-only document so the card can disable its controls', () => {
+    const host = stubSettingsScope<ReviewerSettings>()
+    const controller = new ReviewerCardController(host.scope)
+
+    host.publish({ status: 'ready', writable: false, value: { enabled: true } })
+
+    expect(controller.inject().hooks.reviewerCard.getSnapshot().writable).toBe(false)
   })
 })
 

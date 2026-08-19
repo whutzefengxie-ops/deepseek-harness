@@ -36,6 +36,40 @@ export interface FieldProps {
   onReset: () => void
 }
 
+/** Shared label-and-badge head above every overridable control. */
+function FieldHead(props: Pick<FieldProps,
+  | 'id' | 'label' | 'overridden' | 'disabled' | 'overriddenLabel' | 'resetLabel' | 'onReset'>) {
+  return (
+    <div className={css.head}>
+      <label className={css.label} htmlFor={props.id}>{props.label}</label>
+      {props.overridden
+        ? (
+          <span className={css.badges}>
+            <span className={css.badge}>{props.overriddenLabel}</span>
+            <button
+              type="button"
+              className={css.reset}
+              disabled={props.disabled}
+              onClick={props.onReset}
+            >
+              {props.resetLabel}
+            </button>
+          </span>
+        )
+        : null}
+    </div>
+  )
+}
+
+/** Shared hint line below every overridable control. */
+function FieldHint(props: Pick<FieldProps, 'hint' | 'invalid' | 'invalidLabel'>) {
+  return (
+    <p className={props.invalid ? css.invalid : css.hint}>
+      {props.invalid ? props.invalidLabel : props.hint}
+    </p>
+  )
+}
+
 /**
  * A staged value field. `numeric` only hints the keypad: which drafts a field
  * accepts is decided by its spec, so the control never silently rewrites what
@@ -51,24 +85,7 @@ export function ValueField(props: FieldProps & {
 }) {
   return (
     <div className={css.field}>
-      <div className={css.head}>
-        <label className={css.label} htmlFor={props.id}>{props.label}</label>
-        {props.overridden
-          ? (
-            <span className={css.badges}>
-              <span className={css.badge}>{props.overriddenLabel}</span>
-              <button
-                type="button"
-                className={css.reset}
-                disabled={props.disabled}
-                onClick={props.onReset}
-              >
-                {props.resetLabel}
-              </button>
-            </span>
-          )
-          : null}
-      </div>
+      <FieldHead {...props} />
       <input
         id={props.id}
         className={props.invalid ? css.inputInvalid : css.input}
@@ -80,9 +97,101 @@ export function ValueField(props: FieldProps & {
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
       />
-      <p className={props.invalid ? css.invalid : css.hint}>
-        {props.invalid ? props.invalidLabel : props.hint}
-      </p>
+      <FieldHint {...props} />
+    </div>
+  )
+}
+
+/**
+ * A single-choice field. The staged text is the option value; a control whose
+ * draft is empty (inherited or cleared) shows the placeholder option.
+ * @param props - the field's copy, its staged text, and the edit actions.
+ * @returns the labelled control.
+ */
+export function SelectField(props: FieldProps & {
+  /** The values the control offers, in order. */
+  options: readonly string[]
+  /** Copy for the option labels, in option order. */
+  optionLabels: readonly string[]
+  /** Copy shown while the draft is empty. */
+  placeholder: string
+}) {
+  return (
+    <div className={css.field}>
+      <FieldHead {...props} />
+      <select
+        id={props.id}
+        className={props.invalid ? css.inputInvalid : css.select}
+        {...props.invalid ? { 'aria-invalid': true } : {}}
+        value={props.text}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      >
+        <option value="" disabled hidden>{props.placeholder}</option>
+        {props.options.map((option, index) => (
+          <option key={option} value={option}>{props.optionLabels[index] ?? option}</option>
+        ))}
+      </select>
+      <FieldHint {...props} />
+    </div>
+  )
+}
+
+/**
+ * A multiline free-text field.
+ * @param props - the field's copy, its staged text, and the edit actions.
+ * @returns the labelled control.
+ */
+export function TextAreaField(props: FieldProps & {
+  /** Visible row count. */
+  rows?: number
+}) {
+  return (
+    <div className={css.field}>
+      <FieldHead {...props} />
+      <textarea
+        id={props.id}
+        className={props.invalid ? css.textareaInvalid : css.textarea}
+        rows={props.rows ?? 4}
+        {...props.invalid ? { 'aria-invalid': true } : {}}
+        value={props.text}
+        disabled={props.disabled}
+        onChange={(event) => { props.onEdit(event.target.value) }}
+      />
+      <FieldHint {...props} />
+    </div>
+  )
+}
+
+/**
+ * A boolean field rendered as a toggle. The staged text vocabulary is
+ * `'true'`/`'false'`; an empty draft means the field is inherited.
+ * @param props - the field's copy, its staged text, and the edit actions.
+ * @returns the labelled control.
+ */
+export function ToggleField(props: FieldProps & {
+  /** Copy shown while the draft reads true. */
+  toggleOnLabel: string
+  /** Copy shown while the draft does not read true. */
+  toggleOffLabel: string
+}) {
+  return (
+    <div className={css.field}>
+      <FieldHead {...props} />
+      <div className={css.toggleRow}>
+        <input
+          id={props.id}
+          className={css.toggleInput}
+          type="checkbox"
+          checked={props.text === 'true'}
+          disabled={props.disabled}
+          onChange={(event) => { props.onEdit(event.target.checked ? 'true' : 'false') }}
+        />
+        <span className={css.toggleText}>
+          {props.text === 'true' ? props.toggleOnLabel : props.toggleOffLabel}
+        </span>
+      </div>
+      <FieldHint {...props} />
     </div>
   )
 }

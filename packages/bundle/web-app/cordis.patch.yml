@@ -70,6 +70,13 @@
     - id: session-log-download
       name: '@deepseek-ai/dsh-session-log-export'
 
+    # `/review` over the local Codex CLI: reviews the current session's agent
+    # output with one non-interactive `codex exec` run. The Codex CLI itself
+    # must be installed on the host; the Plugins settings page carries the
+    # model, thinking-effort, sandbox, prompt, and enable-switch configuration.
+    - id: command-reviewer
+      name: '@deepseek-ai/dsh-command-reviewer'
+
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
@@ -227,6 +234,10 @@
     # existing generic workflow tool row.
     - id: ui-workflow-run
       name: '@deepseek-ai/dsh-client-ui-workflow-run'
+
+    # Durable /review lifecycle and Codex JSONL progress card.
+    - id: ui-reviewer
+      name: '@deepseek-ai/dsh-client-ui-reviewer'
 
     # Turn tail: the produced-files row under each closing assistant message.
     # Remove this entry to turn the surface off; the tail hole renders empty.

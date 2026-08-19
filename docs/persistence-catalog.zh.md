@@ -565,6 +565,50 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/session/src/types.ts:308`](../packages/core/session/src/types.ts)
 
+### `review/*`
+
+<a id="reviewactivity--log-only"></a>
+
+#### `review/activity` — 仅日志
+
+```ts persistence-catalog
+/**
+ * Records one log-only progress transition emitted by `codex exec --json`.
+ * @param data - review identity, activity identity, category, state, and optional safe summary.
+ */
+'review/activity': ReviewActivityData
+```
+
+来源：[`packages/interaction/command-reviewer/src/types.ts:57`](../packages/interaction/command-reviewer/src/types.ts)
+
+<a id="reviewend--log-only"></a>
+
+#### `review/end` — 仅日志
+
+```ts persistence-catalog
+/**
+ * Closes one log-only review record with its final rendered text.
+ * @param data - review identity, terminal outcome, and result or diagnostic text.
+ */
+'review/end': ReviewEndData
+```
+
+来源：[`packages/interaction/command-reviewer/src/types.ts:62`](../packages/interaction/command-reviewer/src/types.ts)
+
+<a id="reviewstart--log-only"></a>
+
+#### `review/start` — 仅日志
+
+```ts persistence-catalog
+/**
+ * Opens one log-only review record.
+ * @param data - command identity and optional human-supplied focus.
+ */
+'review/start': ReviewStartData
+```
+
+来源：[`packages/interaction/command-reviewer/src/types.ts:52`](../packages/interaction/command-reviewer/src/types.ts)
+
 ### `sandbox/*`
 
 <a id="sandboxmode--log-only"></a>

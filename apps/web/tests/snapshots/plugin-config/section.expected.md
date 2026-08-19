@@ -36,3 +36,7 @@
         - 'button "展开设置: 网页搜索"':
           - text: 网页搜索 DeepSeek 搜索提供方。
           - img
+      - listitem:
+        - 'button "展开设置: 审查者"':
+          - text: 审查者 使用本地 Codex CLI 审查当前会话中 agent 的输出。
+          - img

@@ -207,6 +207,13 @@ export const commandDefinition: ConversationNodeDefinition<CommandState> = {
     const state = context.state ?? fallbackState(context)
     if (state === undefined) return null
     if (state.command.name !== 'compact') {
+      if (state.command.outcome?.kind === 'success'
+        && state.command.outcome.sourceEventSeq !== undefined) {
+        const current = context.current.get('chat')
+        return current === undefined || current === null
+          ? null
+          : chatNode(context, 'command', state.command.seq, state.command, { visibility: 'hidden' })
+      }
       return chatNode(context, 'command', state.command.seq, state.command)
     }
     const compaction = state.checkpoint === undefined

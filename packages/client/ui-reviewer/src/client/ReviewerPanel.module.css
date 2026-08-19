@@ -1,0 +1,14 @@
+.root { width: 100%; min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); }
+.header { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 510; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+.dot[data-status="running"] { background: var(--dsw-alias-state-business-primary); }
+.dot[data-status="completed"] { background: var(--dsw-alias-state-success); }
+.dot[data-status="failed"] { background: var(--dsw-alias-state-error); }
+.dot[data-status="cancelled"], .dot[data-status="interrupted"] { background: var(--dsw-alias-state-warning); }
+.status { margin-left: auto; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.focus { margin: 6px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; white-space: pre-wrap; }
+.activities { display: flex; flex-direction: column; gap: 3px; margin: 8px 0 0 15px; padding-left: 10px; border-left: 1px solid var(--dsw-alias-line-regular); }
+.activity { display: flex; gap: 6px; align-items: baseline; font-size: 12px; }
+.activityStatus { color: var(--dsw-alias-label-tertiary); }
+.text { margin-top: 10px; }
+.empty { color: var(--dsw-alias-label-tertiary); font-size: 12px; }

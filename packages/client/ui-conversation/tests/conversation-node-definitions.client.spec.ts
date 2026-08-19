@@ -118,6 +118,26 @@ function toolResult(callId: string, text: string) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('suppresses a generic successful command row when a domain event owns its presentation', () => {
+    const value = assembler([
+      at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
+      at(2, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }),
+    ])
+    expect(node(snapshot(value), 'command')).toBeUndefined()
+  })
+
+  it('hides an already materialized command row when a domain event takes over its presentation', () => {
+    const value = assembler([
+      at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
+    ])
+    expect(node(snapshot(value), 'command')?.visibility).toBe('visible')
+
+    value.append(at(2, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }))
+    value.flush()
+
+    expect(node(snapshot(value), 'command')?.visibility).toBe('hidden')
+  })
+
   it('keeps one keyed Assistant node while streaming settles and materializes interruption from Location', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),

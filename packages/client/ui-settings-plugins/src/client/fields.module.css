@@ -98,6 +98,67 @@
   border-color: var(--dsw-alias-label-error);
 }
 
+.select {
+  composes: input;
+  width: 100%;
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--dsw-alias-label-tertiary) 50%)
+      calc(100% - 16px) 50% / 4px 4px no-repeat,
+    linear-gradient(135deg, var(--dsw-alias-label-tertiary) 50%, transparent 50%)
+      calc(100% - 12px) 50% / 4px 4px no-repeat,
+    var(--dsw-alias-bg-layer-3);
+  padding-right: 32px;
+}
+
+.textarea {
+  min-height: 88px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+}
+
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.textarea:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.textareaInvalid {
+  composes: textarea;
+  border-color: var(--dsw-alias-label-error);
+}
+
+.toggleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.toggleInput {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+.toggleText {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .invalid {
   margin: 0;
   font-size: 12px;

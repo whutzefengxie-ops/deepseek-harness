@@ -467,6 +467,44 @@ export interface Config {
 
 Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../packages/code-runtime/code-runtime-worker-thread/src/index.ts)
 
+<a id="deepseek-aidsh-command-reviewer"></a>
+
+## `@deepseek-ai/dsh-command-reviewer`
+
+Requires: `commands` · `subprocess`
+
+```ts config-catalog
+/** User-settings section of the reviewer command. */
+export interface Config {
+  /** Whether `/review` runs at all — the card's enable switch. */
+  enabled?: boolean
+  /** `codex exec --model`; empty uses the Codex default model. */
+  model?: string
+  /** `codex exec -c model_reasoning_effort=…` level. */
+  thinkingEffort?: CodexThinkingEffort
+  /** `codex exec --sandbox` policy. */
+  sandbox?: CodexSandbox
+  /** Review instructions; `{transcript}` marks where the conversation goes. */
+  prompt?: string
+  /** Deployment-level scenario context appended to the prompt. */
+  context?: string
+  /** Tail-keep bound in characters for the rendered transcript. */
+  maxTranscriptChars?: number
+  /** Complete Codex JSONL output cap in bytes. */
+  maxOutputBytes?: number
+  /** Escalation grace in milliseconds for process-tree termination. */
+  terminateGraceMs?: number
+}
+
+/** One Codex reasoning-effort level. */
+export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
+
+/** One `codex exec --sandbox` policy. */
+export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
+```
+
+Source: [`packages/interaction/command-reviewer/src/index.ts:62`](../packages/interaction/command-reviewer/src/index.ts)
+
 <a id="deepseek-aidsh-compaction-basic"></a>
 
 ## `@deepseek-ai/dsh-compaction-basic`
@@ -3213,6 +3251,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-plan` ([`packages/client/ui-plan/src/index.ts`](../packages/client/ui-plan/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-reviewer` ([`packages/client/ui-reviewer/src/index.ts`](../packages/client/ui-reviewer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))

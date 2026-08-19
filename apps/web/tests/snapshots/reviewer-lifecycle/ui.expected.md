@@ -1,0 +1,25 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Please implement the concurrency fix." [disabled]
+  - img
+  - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Please implement the concurrency fix. {{clock}}
+- button "Copy":
+  - img
+- text: Review Completed review the concurrency fix analysis started pnpm exec vitest run reviewer done Codex JSONL events done message done
+- heading "Review result" [level=2]
+- paragraph: The browser request is detached from the admitted Codex process, and refresh replay preserves the result.
+- textbox "Message the agent"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
