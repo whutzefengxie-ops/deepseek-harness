@@ -229,6 +229,10 @@ describe('/review durable background lifecycle', () => {
     expect(spec?.signal).toBeInstanceOf(AbortSignal)
     if (typeof spec?.stdio.stdin !== 'object') throw new Error('expected batch stdin')
     expect(spec.stdio.stdin.data).toContain('Reviewer focus for this run:\n审查上面的方案和代码修改')
+    expect(spec.stdio.stdin.data).toContain('untrusted conversation evidence')
+    const boundary = spec.stdio.stdin.data.match(/<untrusted-transcript-([0-9a-f-]{36})>/)?.[1]
+    expect(boundary).toBeDefined()
+    expect(spec.stdio.stdin.data).toContain(`</untrusted-transcript-${boundary}>`)
 
     test.subprocess.complete()
     expect((await reviewEnd(test)).data).toEqual({
@@ -521,7 +525,7 @@ describe('/review durable background lifecycle', () => {
     expect(spawnWarn).toHaveBeenCalledWith(expect.stringContaining('spawn end append failed'))
   })
 
-  it('handles disabled, empty, missing CLI, and pre-aborted admission without a process', async () => {
+  it('handles disabled, empty, executable failures, and pre-aborted admission without a process', async () => {
     const disabled = await harness({ config: { enabled: false } })
     seed(disabled)
     expect((await run(disabled)).result.kind).toBe('error')
@@ -541,10 +545,19 @@ describe('/review durable background lifecycle', () => {
     expect(hiddenOnlyResult.text).toContain('No conversation')
     const missing = await harness()
     seed(missing)
-    missing.subprocess.resolveError = new Error('missing')
+    missing.subprocess.resolveError = new Error('subprocess-local: command "codex" was not found on PATH')
     const missingResult = (await run(missing)).result
     expect(missingResult.kind).toBe('error')
-    expect(missingResult.text).toContain('not available')
+    expect(missingResult.text).toBe(
+      'The reviewer could not resolve the Codex CLI: subprocess-local: command "codex" was not found on PATH',
+    )
+    const unavailable = await harness()
+    seed(unavailable)
+    unavailable.subprocess.resolveError = new Error('remote sandbox unavailable')
+    expect((await run(unavailable)).result).toEqual({
+      kind: 'error',
+      text: 'The reviewer could not resolve the Codex CLI: remote sandbox unavailable',
+    })
     const definition = missing.ctx.commands.find(missing.agent, 'review')
     if (definition === undefined) throw new Error('review command missing')
     const aborted = new AbortController()
@@ -554,6 +567,7 @@ describe('/review durable background lifecycle', () => {
     expect(disabled.subprocess.spawns).toEqual([])
     expect(empty.subprocess.spawns).toEqual([])
     expect(missing.subprocess.spawns).toEqual([])
+    expect(unavailable.subprocess.spawns).toEqual([])
   })
 
   it('stops admission when the browser aborts after executable resolution', async () => {

@@ -503,7 +503,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-Source: [`packages/interaction/command-reviewer/src/index.ts:62`](../packages/interaction/command-reviewer/src/index.ts)
+Source: [`packages/interaction/command-reviewer/src/index.ts:63`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

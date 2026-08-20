@@ -36,7 +36,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerEnabledHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('invalidValue')}
         toggleOnLabel={t('reviewerEnabledOn')}
         toggleOffLabel={t('reviewerEnabledOff')}
         disabled={disabled}
@@ -50,7 +50,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerModelHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('reviewerModelInvalid')}
         placeholder={t('reviewerModelPlaceholder')}
         disabled={disabled}
         {...state.model}
@@ -63,7 +63,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerThinkingEffortHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('invalidValue')}
         placeholder={t('reviewerSelectPlaceholder')}
         options={['low', 'medium', 'high']}
         optionLabels={[t('reviewerEffortLow'), t('reviewerEffortMedium'), t('reviewerEffortHigh')]}
@@ -78,7 +78,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerSandboxHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('invalidValue')}
         placeholder={t('reviewerSelectPlaceholder')}
         options={['read-only', 'workspace-write', 'danger-full-access']}
         optionLabels={[t('reviewerSandboxReadOnly'), t('reviewerSandboxWorkspaceWrite'), t('reviewerSandboxFullAccess')]}
@@ -93,7 +93,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerPromptHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('invalidValue')}
         rows={5}
         disabled={disabled}
         {...state.prompt}
@@ -106,7 +106,7 @@ export function ReviewerCard(props: ReviewerCardProps) {
         hint={t('reviewerContextHint')}
         overriddenLabel={t('overridden')}
         resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
+        invalidLabel={t('invalidValue')}
         rows={3}
         disabled={disabled}
         {...state.context}

@@ -4,7 +4,7 @@
 export type PluginsSettingsLocaleKey =
   | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
   | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
+  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber' | 'invalidValue'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
@@ -13,7 +13,7 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
   | 'reviewerTitle' | 'reviewerDescription'
   | 'reviewerEnabled' | 'reviewerEnabledHint' | 'reviewerEnabledOn' | 'reviewerEnabledOff'
-  | 'reviewerModel' | 'reviewerModelHint' | 'reviewerModelPlaceholder'
+  | 'reviewerModel' | 'reviewerModelHint' | 'reviewerModelPlaceholder' | 'reviewerModelInvalid'
   | 'reviewerThinkingEffort' | 'reviewerThinkingEffortHint'
   | 'reviewerSandbox' | 'reviewerSandboxHint'
   | 'reviewerPrompt' | 'reviewerPromptHint'
@@ -41,6 +41,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: 'Unsaved',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
   invalidNumber: 'Enter a number, or leave blank to use the default.',
+  invalidValue: 'Choose a valid value, or leave blank to use the default.',
   bashTitle: 'Shell',
   bashDescription: 'Limits every command the agent runs.',
   bashTimeoutMs: 'Command timeout (ms)',
@@ -70,10 +71,11 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   reviewerModel: 'Codex model',
   reviewerModelHint: 'The model passed to codex exec. Use only letters, digits, ._:/@+-, or leave blank for the Codex default.',
   reviewerModelPlaceholder: 'Codex default model',
+  reviewerModelInvalid: 'Use only letters, digits, ._:/@+-, or leave blank for the Codex default.',
   reviewerThinkingEffort: 'Thinking effort',
   reviewerThinkingEffortHint: 'The reasoning effort Codex uses when producing the review.',
   reviewerSandbox: 'Sandbox',
-  reviewerSandboxHint: 'The sandbox policy applied to commands Codex runs during the review.',
+  reviewerSandboxHint: 'Prefer read-only. Writable modes let the review run transcript-driven commands with those permissions.',
   reviewerPrompt: 'Review prompt',
   reviewerPromptHint: 'Review instructions. {transcript} is replaced by the conversation; without it the conversation is appended.',
   reviewerContext: 'Scenario context',
@@ -106,6 +108,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: '未保存',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
   invalidNumber: '请填数字；留空表示使用默认值。',
+  invalidValue: '请选择有效值；留空表示使用默认值。',
   bashTitle: '终端',
   bashDescription: '限制 agent 运行的每一条命令。',
   bashTimeoutMs: '命令超时（毫秒）',
@@ -135,10 +138,11 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   reviewerModel: 'Codex 模型',
   reviewerModelHint: '传给 codex exec 的模型标识符，仅可包含字母、数字和 ._:/@+-；留空使用 Codex 默认模型。',
   reviewerModelPlaceholder: 'Codex 默认模型',
+  reviewerModelInvalid: '仅可使用字母、数字和 ._:/@+-；留空表示使用 Codex 默认模型。',
   reviewerThinkingEffort: '思考程度',
   reviewerThinkingEffortHint: 'Codex 生成审查时的推理投入程度。',
   reviewerSandbox: '沙箱',
-  reviewerSandboxHint: '审查期间 Codex 运行命令时应用的沙箱策略。',
+  reviewerSandboxHint: '建议使用只读模式。可写模式会让审查以相应权限执行对话记录驱动的命令。',
   reviewerPrompt: '审查提示词',
   reviewerPromptHint: '审查指令；{transcript} 会被替换为对话记录，不含占位符时对话记录追加在末尾。',
   reviewerContext: '场景上下文',

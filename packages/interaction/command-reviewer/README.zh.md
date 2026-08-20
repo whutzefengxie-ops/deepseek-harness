@@ -12,7 +12,7 @@
 | `/review <关注点>` | 同上，关注点会作为带标签的段落追加到提示词中，并显示在审查卡片上。 |
 | 尚无对话时执行 `/review` | `No conversation output to review yet.` — 不会启动任何进程。 |
 | 插件被禁用时执行 `/review` | `The reviewer is disabled. Turn it on under Settings → Plugins.` — 不会启动任何进程。 |
-| `PATH` 上没有 `codex` 时执行 `/review` | `The Codex CLI is not available: codex was not found on PATH. Install @openai/codex and try again.` |
+| 子进程提供方无法解析 `codex` 时执行 `/review` | 命令显示提供方的原始解析诊断，不启动进程。 |
 | Codex 运行失败 | 持久化审查卡片会以失败状态结束，并显示 Codex 错误、退出码、信号、畸形输出或输出超限诊断。 |
 
 每次成功准入的调用都会依次记录 `review/start`、零到多个从 Codex JSONL 解码出的 `review/activity`，以及一个 `review/end`；同时仍有执行器持有的纯日志事件对 `command/run` / `command/done`。这些事件都不会进入模型历史。浏览器请求只拥有准入过程：`review/start` 写入后，断开连接或刷新页面不会取消审查。接收 Agent 的上下文拥有后台进程；Agent 或插件卸载时会中止私有信号、终止进程树、等待整棵进程树退出，然后记录取消。
@@ -28,14 +28,14 @@ Web 客户端把这些事件重建为一张独立审查卡片。卡片展示真�
 | `enabled` | `true` | `/review` 是否可用 —— 即卡片上的启用开关。 |
 | `model` | `''` | `codex exec --model`；留空使用 Codex 默认模型，非空值必须是仅包含字母、数字、`.`、`_`、`:`、`/`、`@`、`+` 或 `-` 的可移植标识符。 |
 | `thinkingEffort` | `medium` | `codex exec -c model_reasoning_effort=…`；取值 `low`、`medium`、`high`。 |
-| `sandbox` | `read-only` | `codex exec --sandbox`；取值 `read-only`、`workspace-write`、`danger-full-access`。 |
+| `sandbox` | `read-only` | `codex exec --sandbox`；取值 `read-only`、`workspace-write`、`danger-full-access`。可写模式允许对话记录驱动的审查命令使用所选权限。 |
 | `prompt` | 内置审查指令 | 审查指令；`{transcript}` 标记对话记录插入的位置，不含占位符时对话记录追加在末尾。 |
 | `context` | `''` | 追加为带标签段落的部署级场景上下文。 |
 | `maxTranscriptChars` | `200000` | 对话记录渲染文本的尾部保留上限（字符数）。 |
 | `maxOutputBytes` | `8388608` | 流式 Codex JSONL 完整输出的字节上限；可容纳仓库检查，同时仍会终止失控输出。 |
 | `terminateGraceMs` | `3000` | 进程树终止的升级宽限（毫秒）；受 Node 定时器上限约束。 |
 
-提示词从不放进 argv。它以批量 stdin 的形式穿过子进程 seam，因此任何对话文本都不会进入 shell 边界。模型标识符在进入 Windows `cmd.exe` 包装层之前会先经过验证。stdout 使用流式 JSONL 管道，stderr 则保留有界诊断尾部。Codex 运行是非交互、临时（ephemeral）、去除颜色、允许在 Git 仓库之外执行的；它在会话的工作目录（会话没有工作目录时用进程目录）中运行。
+提示词从不放进 argv。它以批量 stdin 的形式穿过子进程 seam，因此任何对话文本都不会进入 shell 边界。每次运行都会用不可预知的分隔标识包裹对话记录，并明确说明它是不可信证据、不得提供指令；这会降低提示词注入风险，但无法让可写沙箱模式安全地处理不可信对话。模型标识符先在设置卡中校验，再由 Host 校验，之后才可能抵达 Windows `cmd.exe` 包装层。stdout 使用流式 JSONL 管道，stderr 则保留有界诊断尾部。Codex 运行是非交互、临时（ephemeral）、去除颜色、允许在 Git 仓库之外执行的；它在会话的工作目录（会话没有工作目录时用进程目录）中运行。
 
 ## 组合方式
 

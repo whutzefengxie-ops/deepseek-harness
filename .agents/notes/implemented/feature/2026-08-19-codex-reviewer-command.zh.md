@@ -20,9 +20,9 @@ Status: implemented
 codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [-m <model>] -c model_reasoning_effort=<effort>
 ```
 
-提示词以批量 stdin 的形式穿过子进程 seam，因此任何对话文本都不会进入 argv 或 shell 边界。在 Windows 上，argv 会包进 `cmd.exe /d /s /c`（与 `dsh-subagent-codex` 使用同一边界），因此可配置的模型值必须先验证为可移植标识符，包装层才会收到它；Codex CLI 本身必须已安装在宿主机上并完成认证。运行在会话的工作目录（会话没有工作目录时用进程目录）中执行，默认沙箱为 `read-only`。stdout 使用流式 JSONL；解码器记录公开的 Codex 阶段与安全条目摘要，并提取最终 `agent_message` 文本。
+提示词以批量 stdin 的形式穿过子进程 seam，因此任何对话文本都不会进入 argv 或 shell 边界。每次运行都会用包含新 UUID 的分隔标识包裹对话记录，并要求 Codex 只把其中内容视为不可信审查证据，不得视为指令。在 Windows 上，argv 会包进 `cmd.exe /d /s /c`（与 `dsh-subagent-codex` 使用同一边界），因此可配置的模型值必须先验证为可移植标识符，包装层才会收到它；Codex CLI 本身必须已安装在宿主机上并完成认证。运行在会话的工作目录（会话没有工作目录时用进程目录）中执行，默认沙箱为 `read-only`。stdout 使用流式 JSONL；解码器记录公开的 Codex 阶段与安全条目摘要，并提取最终 `agent_message` 文本。
 
-处理器每次调用都读取设置节的字段，因此设置修改实时生效。它完成可执行文件准入、写入 `review/start`、使用私有 controller 启动进程，然后立即返回带 `sourceEventSeq` 的成功确认。浏览器信号仅用于准入，不会传给已准入进程。接收 Agent 的上下文拥有 controller 与结算：正常完成会终止任何残留的后代进程，Agent 或插件卸载则中止整棵进程树；两条路径都在记录终态审查事件之前等待整棵进程树退出。
+处理器每次调用都读取设置节的字段，因此设置修改实时生效。它完成可执行文件准入，并在解析失败时保留子进程提供方的诊断；随后写入 `review/start`、使用私有 controller 启动进程，然后立即返回带 `sourceEventSeq` 的成功确认。浏览器信号仅用于准入，不会传给已准入进程。接收 Agent 的上下文拥有 controller 与结算：正常完成会终止任何残留的后代进程，Agent 或插件卸载则中止整棵进程树；两条路径都在记录终态审查事件之前等待整棵进程树退出。
 
 ### 持久化事件负责进度与刷新恢复
 
@@ -32,7 +32,7 @@ codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [
 
 ### `command-reviewer` 设置节承载全部可调项
 
-插件注册 `command-reviewer` 设置命名空间（基础层 = 组合入口），schema 为：`enabled`（卡片开关；关闭时命令拒绝执行）、`model`（留空，或使用仅包含字母、数字、`.`、`_`、`:`、`/`、`@`、`+` 和 `-` 的可移植标识符）、`thinkingEffort`（`low|medium|high`）、`sandbox`、`prompt`（`{transcript}` 占位符标记对话记录插入位置，不含占位符时对话记录追加在末尾）、`context`（部署级场景补充）、`maxTranscriptChars`、`maxOutputBytes` 与 `terminateGraceMs`（受 Node 定时器上限约束）。`maxOutputBytes` 默认为 8 MiB，可容纳仓库检查产生的命令输出，同时仍会限制失控进程。`@deepseek-ai/dsh-client-ui-settings-plugins` 在设置页的“插件”区渲染「审查者」卡片。它与“终端”“Agent 循环”“网页搜索”使用相同的卡片界面，包括启用开关、思考程度与沙箱的下拉框、提示词与上下文的文本域。部署未组合该插件时，卡片不渲染任何内容。
+插件注册 `command-reviewer` 设置命名空间（基础层 = 组合入口），schema 为：`enabled`（卡片开关；关闭时命令拒绝执行）、`model`（留空，或使用仅包含字母、数字、`.`、`_`、`:`、`/`、`@`、`+` 和 `-` 的可移植标识符）、`thinkingEffort`（`low|medium|high`）、`sandbox`、`prompt`（`{transcript}` 占位符标记对话记录插入位置，不含占位符时对话记录追加在末尾）、`context`（部署级场景补充）、`maxTranscriptChars`、`maxOutputBytes` 与 `terminateGraceMs`（受 Node 定时器上限约束）。`maxOutputBytes` 默认为 8 MiB，可容纳仓库检查产生的命令输出，同时仍会限制失控进程。`@deepseek-ai/dsh-client-ui-settings-plugins` 在设置页的“插件”区渲染「审查者」卡片。它与“终端”“Agent 循环”“网页搜索”使用相同的卡片界面，包括启用开关、思考程度与沙箱的下拉框、提示词与上下文的文本域。卡片会在保存前校验模型标识符，为不同字段显示对应的无效值文案，并提醒用户可写沙箱模式会把相应权限授予对话记录驱动的审查命令。部署未组合该插件时，卡片不渲染任何内容。
 
 ### 命令完全不进入被审查 agent 的模型流
 
@@ -64,5 +64,5 @@ app-server 协议是一条由 subagent 能力持有的长连接 stdio 通道；�
 
 - **每次调用一次辅助 Codex 运行**：每次 `/review` 启动一个全新的非交互进程；没有会话复用，也无法从命令内部继续审查。
 - **只审查对话文本**：推理块、图片和附件不会转发；审查看到的是文本、工具调用与工具结果。
-- **Codex 可用性由宿主机负责**：缺失 CLI 会阻止准入；认证、JSONL、退出码、信号与输出上限失败会在持久化卡片中可见地结束。
+- **Codex 可用性由宿主机负责**：可执行文件解析失败会阻止准入，并显示子进程提供方的诊断；认证、JSONL、退出码、信号与输出上限失败会在持久化卡片中可见地结束。
 - **新增卡片界面**：“插件”页多出第四张卡片；`maxTranscriptChars`/`maxOutputBytes`/`terminateGraceMs` 通过 cordis.yml 而不是卡片配置，与其他宿主平面设置节保持一致。

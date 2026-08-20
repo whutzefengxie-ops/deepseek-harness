@@ -172,6 +172,18 @@ describe('CardForm', () => {
     expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test']])
   })
 
+  it('blocks text outside a configured complete-value pattern', async () => {
+    const host = stubSettingsScope<Record<string, unknown>>()
+    const subject = new CardForm(host.scope, [textField('model', /^(?:[a-z][a-z0-9.-]*)?$/)])
+    host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
+
+    subject.actions().edit('model', 'gpt 5')
+
+    expect(subject.field('model')).toEqual({ text: 'gpt 5', overridden: false, invalid: true })
+    await subject.save()
+    expect(host.set).not.toHaveBeenCalled()
+  })
+
   it('keeps the drafts a save did not land, and reports the failure', async () => {
     const { host, subject } = form()
 
@@ -693,6 +705,23 @@ describe('ReviewerCardController', () => {
     await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('enabled') })
 
     expect(face.hooks.reviewerCard.getSnapshot().dirty).toBe(false)
+  })
+
+  it('blocks a model identifier the Host schema would reject', async () => {
+    const host = stubSettingsScope<ReviewerSettings>()
+    const controller = new ReviewerCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
+    const face = controller.inject()
+
+    face.edit('model', 'gpt 5')
+
+    expect(face.hooks.reviewerCard.getSnapshot()).toMatchObject({
+      dirty: true,
+      invalid: true,
+      model: { text: 'gpt 5', invalid: true },
+    })
+    face.save()
+    expect(host.set).not.toHaveBeenCalled()
   })
 
   it('reports a read-only document so the card can disable its controls', () => {

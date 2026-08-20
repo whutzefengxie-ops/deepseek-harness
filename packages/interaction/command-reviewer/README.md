@@ -12,7 +12,7 @@ Human-facing `/review` control over the local Codex CLI. The plugin registers on
 | `/review <focus>` | Same, with the focus appended to the prompt as a labelled section and shown on the review card. |
 | `/review` with no conversation yet | `No conversation output to review yet.` — no process is spawned. |
 | `/review` while the plugin is disabled | `The reviewer is disabled. Turn it on under Settings → Plugins.` — no process is spawned. |
-| `/review` without `codex` on `PATH` | `The Codex CLI is not available: codex was not found on PATH. Install @openai/codex and try again.` |
+| `/review` when the subprocess provider cannot resolve `codex` | The command reports the provider's exact resolution diagnostic and does not spawn a process. |
 | `/review` whose Codex run fails | The durable review card settles as failed with the Codex error, exit code, signal, malformed-output diagnostic, or output-limit diagnostic. |
 
 Every admitted invocation records `review/start`, zero or more `review/activity` records decoded from Codex JSONL, and one `review/end`, alongside the executor-owned log-only `command/run` / `command/done` pair. None joins model history. The browser request owns admission only: disconnecting or refreshing after `review/start` does not cancel the run. The receiving Agent's context owns the process; Agent or plugin teardown aborts its private signal, terminates the process tree, waits for whole-tree exit, and then records cancellation.
@@ -28,14 +28,14 @@ The plugin registers the `command-reviewer` settings namespace when a settings s
 | `enabled` | `true` | Whether `/review` runs at all — the card's enable switch. |
 | `model` | `''` | `codex exec --model`; empty uses the Codex default model, while a non-empty value must be a portable identifier containing only letters, digits, `.`, `_`, `:`, `/`, `@`, `+`, or `-`. |
 | `thinkingEffort` | `medium` | `codex exec -c model_reasoning_effort=…`; one of `low`, `medium`, `high`. |
-| `sandbox` | `read-only` | `codex exec --sandbox`; one of `read-only`, `workspace-write`, `danger-full-access`. |
+| `sandbox` | `read-only` | `codex exec --sandbox`; one of `read-only`, `workspace-write`, `danger-full-access`. Writable modes allow transcript-driven review commands to use the selected permissions. |
 | `prompt` | built-in review instructions | Review instructions; `{transcript}` marks where the conversation goes, otherwise the transcript is appended. |
 | `context` | `''` | Deployment-level scenario context appended as a labelled section. |
 | `maxTranscriptChars` | `200000` | Tail-keep bound in characters for the rendered transcript. |
 | `maxOutputBytes` | `8388608` | Complete byte cap for the streamed Codex JSONL output; large enough for repository inspection while still terminating runaway output. |
 | `terminateGraceMs` | `3000` | Escalation grace in milliseconds for process-tree termination; bounded by the Node timer maximum. |
 
-The prompt never rides argv — it crosses the subprocess seam as batch stdin, so no conversation text enters a shell boundary. The model identifier is validated before it can reach the Windows `cmd.exe` wrapper. Stdout is a streamed JSONL pipe, while stderr remains a bounded diagnostic tail. The Codex run is non-interactive, ephemeral, color-stripped, and allowed outside Git repositories; it runs in the session's working directory (the process directory when the session carries none).
+The prompt never rides argv — it crosses the subprocess seam as batch stdin, so no conversation text enters a shell boundary. Each run wraps the transcript in an unpredictable delimiter and explicitly identifies it as untrusted evidence that must not supply instructions; this reduces prompt-injection risk but does not make writable sandbox modes safe for untrusted conversations. The model identifier is validated in the settings card and again by the Host before it can reach the Windows `cmd.exe` wrapper. Stdout is a streamed JSONL pipe, while stderr remains a bounded diagnostic tail. The Codex run is non-interactive, ephemeral, color-stripped, and allowed outside Git repositories; it runs in the session's working directory (the process directory when the session carries none).
 
 ## Composition
 

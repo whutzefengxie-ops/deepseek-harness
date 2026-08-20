@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-command-reviewer
  */
 
+import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -109,11 +110,6 @@ const NO_HISTORY: CommandResult = {
   text: 'No conversation output to review yet.',
 }
 const CANCELLED: CommandResult = { kind: 'error', text: 'Review cancelled.' }
-const CODEX_MISSING: CommandResult = {
-  kind: 'error',
-  text: 'The Codex CLI is not available: codex was not found on PATH. Install @openai/codex and try again.',
-}
-
 function assertConfig(config: Required<Config>): void {
   if (config.terminateGraceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
@@ -334,13 +330,17 @@ export function apply(ctx: Context, config: Config): void {
       resolved.context,
       invocation.rawInput.trim(),
       transcript,
+      randomUUID(),
     )
 
     try {
       await ctx.subprocess.resolveExecutable('codex', undefined, invocation.signal)
-    } catch {
+    } catch (error: unknown) {
       if (invocation.signal.aborted) return CANCELLED
-      return CODEX_MISSING
+      return {
+        kind: 'error',
+        text: `The reviewer could not resolve the Codex CLI: ${renderThrown(error)}`,
+      }
     }
     if (invocation.signal.aborted) return CANCELLED
 

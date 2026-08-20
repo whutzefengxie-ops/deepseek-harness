@@ -13,6 +13,9 @@ import {
  */
 export const REVIEWER_NS = 'command-reviewer'
 
+/** Browser-side preview of the Host schema's portable Codex model identifier. */
+const REVIEWER_MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._:/@+-]*)?$/
+
 /** The reviewer fields this card edits — a subset of the served schema by design. */
 export interface ReviewerSettings {
   enabled?: boolean
@@ -50,7 +53,7 @@ export class ReviewerCardController {
   constructor(scope: SettingsScope<ReviewerSettings>) {
     this.form = new CardForm(scope, [
       boolField('enabled'),
-      textField('model'),
+      textField('model', REVIEWER_MODEL_PATTERN),
       selectField('thinkingEffort', ['low', 'medium', 'high']),
       selectField('sandbox', ['read-only', 'workspace-write', 'danger-full-access']),
       textField('prompt'),

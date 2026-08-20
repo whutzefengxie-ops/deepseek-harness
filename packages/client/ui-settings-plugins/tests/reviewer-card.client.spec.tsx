@@ -118,6 +118,19 @@ describe('ReviewerCard', () => {
     ])
   })
 
+  it('shows field-specific validation copy', () => {
+    renderReviewer({
+      invalid: true,
+      model: field('gpt 5', { invalid: true }),
+      sandbox: field('root', { invalid: true }),
+    })
+    expand()
+
+    expect(screen.getByText(en.reviewerModelInvalid)).toBeTruthy()
+    expect(screen.getByText(en.invalidValue)).toBeTruthy()
+    expect(screen.queryByText(en.invalidNumber)).toBeNull()
+  })
+
   it('addresses each field with its own reset', () => {
     const actions = renderReviewer({
       enabled: field('false', { overridden: true }),

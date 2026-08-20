@@ -10,6 +10,7 @@
     { "path": "../ui-primitives" },
     { "path": "../ui-slots" },
     { "path": "../../core/session" },
+    { "path": "../../interaction/commands" },
     { "path": "../../interaction/command-reviewer" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]

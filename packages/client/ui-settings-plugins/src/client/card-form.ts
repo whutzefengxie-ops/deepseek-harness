@@ -129,18 +129,23 @@ export function numberField(field: string): CardFieldSpec {
 }
 
 /**
- * A free-text field. An empty draft clears the field, so emptying the control
- * and saving is the same gesture as resetting it.
+ * A text field, optionally restricted by a complete-value pattern. An empty
+ * draft clears the field, so emptying the control and saving is the same
+ * gesture as resetting it.
  * @param field - field name inside the namespace section.
+ * @param pattern - optional complete-value pattern for non-empty drafts.
  * @returns the field's conversion spec.
  */
-export function textField(field: string): CardFieldSpec {
+export function textField(field: string, pattern?: RegExp): CardFieldSpec {
   return {
     field,
     format: value => typeof value === 'string' ? value : '',
     parse: (text) => {
       const trimmed = text.trim()
-      return trimmed === '' ? { kind: 'clear' } : { kind: 'set', value: trimmed }
+      if (trimmed === '') return { kind: 'clear' }
+      return pattern === undefined || pattern.test(trimmed)
+        ? { kind: 'set', value: trimmed }
+        : undefined
     },
   }
 }
