@@ -562,7 +562,9 @@ describe('/review durable background lifecycle', () => {
     if (definition === undefined) throw new Error('review command missing')
     const aborted = new AbortController()
     aborted.abort(new Error('cancelled'))
-    expect(await definition.handler({ commandId: CommandId('pre-aborted'), agent: missing.agent, rawInput: '', signal: aborted.signal }))
+    expect(await definition.handler({
+      commandId: CommandId('pre-aborted'), agent: missing.agent, rawInput: '', attachments: [], signal: aborted.signal,
+    }))
       .toEqual({ kind: 'error', text: 'Review cancelled.' })
     expect(disabled.subprocess.spawns).toEqual([])
     expect(empty.subprocess.spawns).toEqual([])
@@ -578,7 +580,7 @@ describe('/review durable background lifecycle', () => {
     const definition = test.ctx.commands.find(test.agent, 'review')
     if (definition === undefined) throw new Error('review command missing')
     expect(await definition.handler({
-      commandId: CommandId('post-resolve-abort'), agent: test.agent, rawInput: '', signal: browser.signal,
+      commandId: CommandId('post-resolve-abort'), agent: test.agent, rawInput: '', attachments: [], signal: browser.signal,
     })).toEqual({ kind: 'error', text: 'Review cancelled.' })
     expect(test.subprocess.spawns).toEqual([])
   })
