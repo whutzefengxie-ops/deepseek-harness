@@ -12,7 +12,7 @@ Plugin-owned human-command registry consumed by interactive UI adapters. The [pl
 
 `parseCommand()` recognizes a slash at byte zero, a lowercase name containing letters, digits, `_`, or `-`, and either end-of-input or whitespace. It returns every byte after the name as `rawInput`, including separator whitespace; consumers own their command-specific grammar and may normalize only what that grammar permits.
 
-Handlers return `success` or `error` plus optional UI text. A successful handler may also return `sourceEventSeq` when an earlier domain event owns a richer presentation; the lifecycle invariant requires that reference to be a prior non-command event in the same session. Results are rendered directly by the adapter and never enter model history. The registry never submits `rawInput` to the agent implicitly; a command producer may explicitly schedule model-visible work through the receiving `Agent`, in which case that producer owns the resulting message contract. The registry races handler completion against the supplied abort signal, but an uncooperative handler may continue its own external side effects after the caller stops awaiting it.
+Handlers return `success` or `error` plus optional UI text. A successful handler may also return `sourceEventSeq` when an earlier domain event owns a richer presentation; the lifecycle invariant requires that reference to be a prior non-command event in the same session. Results are rendered directly by the adapter and never enter model history. The registry never submits `rawInput` to the agent implicitly; a command producer may explicitly schedule model-visible work through the receiving `Agent`, in which case that producer owns the resulting message contract. A handler calls `invocation.commit()` immediately before publishing an irrevocable domain mutation that transfers settlement ownership away from the UI request. The call throws if the request is already aborted; after it returns, later request cancellation no longer rejects dispatch, and the handler must settle its result and own any admitted detached work. Without that transfer, the registry races handler completion against the supplied abort signal and may stop awaiting an uncooperative handler.
 
 ## Composition
 
@@ -37,4 +37,4 @@ Registry metadata, command input, and direct output never enter a model request 
 ## Known Limitations and Deferred Work
 
 - **Only unstructured text input** — forms, completion schemas, and typed arguments remain command-owned parsing concerns.
-- **Cooperative side-effect cancellation** — dispatch stops awaiting on abort; handlers must honor the signal to stop work that has already escaped into external systems.
+- **Explicit settlement transfer** — a committed handler cannot be cancelled by its UI request; it must expose a domain-owned lifecycle for any work that outlives dispatch.

@@ -25,6 +25,9 @@ export const CODEX_MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._:/@+-]*)?$/
 /** One Codex reasoning-effort level. */
 export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 
+/** Environment key carrying a quoted Windows batch-wrapper path into `cmd.exe`. */
+export const CODEX_BATCH_EXECUTABLE_ENV = 'DSH_CODEX_REVIEWER_EXECUTABLE'
+
 /**
  * Placeholder the configured review prompt may carry; it marks where the
  * conversation transcript is substituted. A prompt without it gets the
@@ -42,18 +45,26 @@ export interface CodexReviewOptions {
   sandbox: CodexSandbox
 }
 
+/** Provider-ready executable arguments and explicit environment for one review. */
+export interface CodexReviewLaunch {
+  readonly argv: readonly string[]
+  readonly env?: Readonly<Record<string, string>>
+}
+
 /**
  * Build the argument vector for one non-interactive Codex review. The review
  * prompt never rides argv — it crosses the subprocess seam as batch stdin, so
  * no conversation text enters a shell boundary.
  * @param options - model, reasoning effort, and sandbox policy.
- * @param platform - host platform selecting the Windows cmd wrapper.
- * @returns argv starting with the executable.
+ * @param executable - canonical Codex executable in the subprocess provider's execution world.
+ * @param commandInterpreter - canonical command interpreter when the executable is a Windows batch wrapper.
+ * @returns provider-ready argv plus the explicit environment needed by a Windows batch wrapper.
  */
-export function codexReviewArgv(
+export function codexReviewLaunch(
   options: CodexReviewOptions,
-  platform: NodeJS.Platform = process.platform,
-): string[] {
+  executable: string,
+  commandInterpreter?: string,
+): CodexReviewLaunch {
   if (!CODEX_MODEL_PATTERN.test(options.model)) {
     throw new Error('command-reviewer: model must be empty or a portable model identifier')
   }
@@ -67,9 +78,23 @@ export function codexReviewArgv(
     ...options.model.length === 0 ? [] : ['-m', options.model],
     '-c', `model_reasoning_effort=${options.thinkingEffort}`,
   ]
-  return platform === 'win32'
-    ? ['cmd.exe', '/d', '/s', '/c', 'codex', ...exec]
-    : ['codex', ...exec]
+  if (commandInterpreter === undefined) return { argv: [executable, ...exec] }
+  return {
+    argv: [
+      commandInterpreter, '/d', '/q', '/v:off', '/s', '/c',
+      `%${CODEX_BATCH_EXECUTABLE_ENV}% ${exec.join(' ')}`,
+    ],
+    env: { [CODEX_BATCH_EXECUTABLE_ENV]: `"${executable}"` },
+  }
+}
+
+/**
+ * Detect a Windows batch wrapper from its provider-resolved path.
+ * @param executable - canonical executable path.
+ * @returns whether the executable needs a Windows command interpreter.
+ */
+export function codexNeedsCommandInterpreter(executable: string): boolean {
+  return /\.(?:bat|cmd)$/iu.test(executable)
 }
 
 /** Progress and terminal facts decoded from one supported Codex JSONL event. */
@@ -249,10 +274,27 @@ function toolResultText(block: Extract<ContentBlock, { type: 'tool-result' }>): 
   return texts.join(' ')
 }
 
+/** Keep conversational evidence while omitting request-configuration context. */
+function isTranscriptEvidence(message: Message): boolean {
+  const source = message.source
+  if (!('form' in source)) return true
+  switch (source.form) {
+    case 'instructions':
+    case 'catalog':
+    case 'snapshot':
+      return false
+    default:
+      // Notice, relay, recall, undeclared, and future forms remain evidence.
+      return true
+  }
+}
+
 /**
  * Render the ordered derived conversation as plain text for the review.
- * Reasoning and image blocks contribute no review surface and are skipped;
- * unknown future blocks fall through the same documented skip.
+ * Instruction, catalog, and snapshot context configures the reviewed Agent
+ * rather than recording its work and is omitted. Reasoning and image blocks
+ * contribute no review surface and are also skipped; unknown future blocks
+ * fall through the same documented skip.
  * @param messages - derived session messages in model order.
  * @param maxChars - tail-keep bound in characters for the rendered transcript.
  * @returns the rendered transcript, truncated to its tail with a header when
@@ -261,6 +303,7 @@ function toolResultText(block: Extract<ContentBlock, { type: 'tool-result' }>): 
 export function renderTranscript(messages: readonly Message[], maxChars: number): string {
   const lines: string[] = []
   for (const message of messages) {
+    if (!isTranscriptEvidence(message)) continue
     for (const block of message.content) {
       switch (block.type) {
         case 'text':

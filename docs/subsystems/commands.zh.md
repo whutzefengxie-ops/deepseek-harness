@@ -52,7 +52,7 @@ interface CommandDefinition {
 
 ## 调用与结果
 
-取消由适配器负责，适配器会传入确切的目标 agent。`rawInput` 紧接在解析后的名称之后，并保留适配器传入的分隔符与后缀。结果会直接呈现给 UI，而不是工具结果或会话事件。
+取消由适配器负责，适配器会传入确切的目标 agent。`rawInput` 紧接在解析后的名称之后，并保留适配器传入的分隔符与后缀。处理器在不可撤销领域变更把结算所有权移出 UI 请求前立即调用 `commit()`。结果会直接呈现给 UI，而不是工具结果或会话事件。
 
 ```ts type-equiv
 /** Invocation passed to one registered command handler. */
@@ -73,6 +73,14 @@ interface CommandInvocation {
   readonly attachments: readonly ImageBlock[]
   /** Cancellation signal owned by the dispatching UI request. */
   readonly signal: AbortSignal
+  /**
+   * Transfer settlement ownership from the UI request to the handler before
+   * publishing an irrevocable domain mutation. The call throws when the
+   * request is already aborted. Once committed, later request cancellation no
+   * longer rejects command dispatch; the handler must settle its own result
+   * and own any detached work it admitted.
+   */
+  readonly commit: () => void
 }
 ```
 
@@ -184,7 +192,7 @@ find(agent: Agent, name: string): CommandDefinition | undefined
 
 Types: [Agent](core.md) · [EncodedImageAttachment](attachment.md)
 
-Source: [`packages/interaction/commands/src/index.ts:250`](../../packages/interaction/commands/src/index.ts)
+Source: [`packages/interaction/commands/src/index.ts:259`](../../packages/interaction/commands/src/index.ts)
 
 <a id="commands-events"></a>
 

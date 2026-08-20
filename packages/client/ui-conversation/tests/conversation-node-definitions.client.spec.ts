@@ -5,7 +5,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-runtime/client'
 import { assistantDefinition } from '../src/client/conversation-nodes/assistant.ts'
-import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
+import { ChatSnapshotBuilder, chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
 import { compactionDefinition } from '../src/client/conversation-nodes/compaction.ts'
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
@@ -35,8 +35,10 @@ const DEFINITIONS: readonly ConversationNodeDefinition[] = [
 ]
 
 class TestEventDefinitions {
+  constructor(private readonly definitions: readonly ConversationNodeDefinition[] = DEFINITIONS) {}
+
   entries(): readonly ConversationNodeDefinition[] {
-    return DEFINITIONS
+    return this.definitions
   }
 
   fallbackEntry(): ConversationNodeDefinition {
@@ -68,8 +70,12 @@ function at(
   }
 }
 
-function assembler(entries: readonly ConversationEventInput[] = [], hasMore = false): ConversationNodeAssembler {
-  const value = new ConversationNodeAssembler(new TestEventDefinitions(), new TestViewDefinitions())
+function assembler(
+  entries: readonly ConversationEventInput[] = [],
+  hasMore = false,
+  definitions: readonly ConversationNodeDefinition[] = DEFINITIONS,
+): ConversationNodeAssembler {
+  const value = new ConversationNodeAssembler(new TestEventDefinitions(definitions), new TestViewDefinitions())
   value.replaceWindow(entries, hasMore)
   value.flush()
   return value
@@ -117,22 +123,87 @@ function toolResult(callId: string, text: string) {
   }
 }
 
+const DOMAIN_DEFINITION: ConversationNodeDefinition<true> = {
+  kind: 'test-domain',
+  target: 'chat',
+  match: event => event.type === 'review/start'
+    ? { id: (event.data as { commandId: string }).commandId, role: 'start' }
+    : null,
+  start: () => true,
+  update: context => context.state,
+  buildViewNode: (context) => {
+    const anchor = context.start
+    if (anchor === undefined) return null
+    return {
+      key: context.key,
+      kind: 'test-domain',
+      id: context.id,
+      target: 'chat',
+      anchorSeq: anchor.event.seq,
+      location: anchor.location,
+      visibility: 'visible',
+      data: null,
+    } as unknown as ChatConversationViewNode
+  },
+}
+
 describe('built-in conversation node Definitions', () => {
-  it('suppresses a generic successful command row when a domain event owns its presentation', () => {
+  it('reconciles a content-only upsert without scanning the retained Chat history', () => {
+    let kindReads = 0
+    const retained = Array.from({ length: 1_000 }, (_, index) => {
+      const node = {
+        key: `test:${index}`,
+        id: String(index),
+        target: 'chat',
+        anchorSeq: index,
+        location: { kind: 'unresolved' },
+        visibility: 'visible',
+        data: { revision: 0 },
+      }
+      Object.defineProperty(node, 'kind', {
+        enumerable: true,
+        get: () => { kindReads += 1; return 'test-domain' },
+      })
+      return node as unknown as ChatConversationViewNode
+    })
+    const timeline = { turnOrder: [], turns: new Map() }
+    const builder = new ChatSnapshotBuilder()
+    builder.replace({ nodes: retained, timeline })
+    kindReads = 0
+    const updated = { ...retained[500], data: { revision: 1 } } as ChatConversationViewNode
+
+    builder.apply({ upserts: [updated], timeline })
+
+    expect(kindReads).toBeLessThan(20)
+  })
+
+  it('keeps a generic successful command row when no domain Chat node owns its presentation', () => {
     const value = assembler([
       at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
       at(2, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }),
     ])
-    expect(node(snapshot(value), 'command')).toBeUndefined()
+    expect(node(snapshot(value), 'command')?.visibility).toBe('visible')
   })
 
-  it('hides an already materialized command row when a domain event takes over its presentation', () => {
+  it('hides the generic row on replay only when a visible domain Chat node has the referenced anchor', () => {
     const value = assembler([
       at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
-    ])
+      at(10, 'review/start', { commandId: 'review-1' }),
+      at(11, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }),
+    ], false, [...DEFINITIONS, DOMAIN_DEFINITION])
+
+    expect(node(snapshot(value), 'command')?.visibility).toBe('hidden')
+    expect(node(snapshot(value), 'test-domain')?.visibility).toBe('visible')
+  })
+
+  it('hides an already materialized command row when a visible domain Chat node takes over', () => {
+    const value = assembler([
+      at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
+    ], false, [...DEFINITIONS, DOMAIN_DEFINITION])
     expect(node(snapshot(value), 'command')?.visibility).toBe('visible')
 
-    value.append(at(2, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }))
+    value.append(at(10, 'review/start', { commandId: 'review-1' }))
+    value.append(at(11, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }))
     value.flush()
 
     expect(node(snapshot(value), 'command')?.visibility).toBe('hidden')

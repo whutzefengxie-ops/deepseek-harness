@@ -19,12 +19,27 @@ export type ReviewActivityKind =
 export type ReviewActivityStatus = 'started' | 'completed'
 
 /** Terminal state of one review run. */
-export type ReviewOutcome = 'completed' | 'failed' | 'cancelled'
+export type ReviewOutcome = 'completed' | 'failed' | 'cancelled' | 'interrupted'
+
+/** Exact model request and execution facts admitted for one review. */
+export interface ReviewRequestData {
+  /** Complete prompt written to Codex stdin. */
+  readonly prompt: string
+  /** Canonical executable and arguments passed to the subprocess provider. */
+  readonly argv: readonly string[]
+  /** Explicit child environment entries required by the admitted executable form. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Working directory in the subprocess provider's execution world. */
+  readonly cwd: string
+  /** Maximum elapsed run time before the process tree is terminated. */
+  readonly timeoutMs: number
+}
 
 /** Opens one durable review record after the Codex executable is admitted. */
 export interface ReviewStartData {
   readonly commandId: CommandId
   readonly focus: string
+  readonly request: ReviewRequestData
 }
 
 /** Records one real Codex JSONL progress transition. */
@@ -47,7 +62,7 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
      * Opens one log-only review record.
-     * @param data - command identity and optional human-supplied focus.
+     * @param data - command identity, human-supplied focus, and exact admitted request.
      */
     'review/start': ReviewStartData
     /**

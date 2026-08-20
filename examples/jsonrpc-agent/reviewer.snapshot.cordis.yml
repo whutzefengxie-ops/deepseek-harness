@@ -1,0 +1,7 @@
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.snapshot.yml
+
+- id: reviewer-events-fixture
+  name: './tests/fixtures/reviewer-events.ts'

@@ -6,7 +6,7 @@ Browser presentation for the durable `/review` lifecycle. The package folds `rev
 
 ## Presentation
 
-The card appears as soon as `review/start` arrives. It shows the optional focus, current status, and real Codex JSONL activity for analysis, commands, tools, searches, file changes, and result production. Activity details contain safe operation summaries, never hidden reasoning text or invented percentages. `review/end` adds the final Markdown review or failure/cancellation diagnostic.
+The card appears as soon as `review/start` arrives. It shows the optional focus, current status, and real Codex JSONL activity for analysis, commands, tools, searches, file changes, and result production. Activity details contain safe operation summaries, never hidden reasoning text or invented percentages. `review/end` adds the final Markdown review or a failure, cancellation, or interrupted-host diagnostic.
 
 The host command returns `sourceEventSeq` for the start record. The generic slash-command Definition suppresses its duplicate success row when this authoritative review node is available.
 
@@ -25,4 +25,4 @@ None.
 ## Known Limitations and Deferred Work
 
 - The card reports Codex's public JSONL lifecycle only; the CLI does not provide a completion percentage.
-- Refresh reconstructs durable events but cannot reconnect to raw stdout; later Host events continue updating the same node.
+- Refresh reconstructs durable events but cannot reconnect to raw stdout; later Host events continue updating the same node, and a resumed Host closes an open record as `Interrupted`.

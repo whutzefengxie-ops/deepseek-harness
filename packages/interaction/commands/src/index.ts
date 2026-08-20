@@ -48,6 +48,14 @@ export interface CommandInvocation {
   readonly attachments: readonly ImageBlock[]
   /** Cancellation signal owned by the dispatching UI request. */
   readonly signal: AbortSignal
+  /**
+   * Transfer settlement ownership from the UI request to the handler before
+   * publishing an irrevocable domain mutation. The call throws when the
+   * request is already aborted. Once committed, later request cancellation no
+   * longer rejects command dispatch; the handler must settle its own result
+   * and own any detached work it admitted.
+   */
+  readonly commit: () => void
 }
 
 /** Plugin-owned command registration. */
@@ -143,11 +151,12 @@ function renderThrown(value: unknown): string {
 }
 
 /** Stop awaiting an uncooperative handler once its owning UI request aborts. */
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortError(signal))
+function withAbort<T>(promise: Promise<T>, signal: AbortSignal, committed: () => boolean): Promise<T> {
+  if (signal.aborted && !committed()) return Promise.reject(abortError(signal))
   return new Promise<T>((resolve, reject) => {
     const onAbort = (): void => {
       signal.removeEventListener('abort', onAbort)
+      if (committed()) return
       reject(abortError(signal))
     }
     signal.addEventListener('abort', onAbort, { once: true })
@@ -383,11 +392,20 @@ export class CommandRuntime extends TypertRemoteService {
         throw cancelledDuringAdmission
       }
     }
-    const invocation = Object.freeze({ commandId, agent, rawInput: parsed.rawInput, attachments, signal })
+    let committed = false
+    const commit = (): void => {
+      if (committed) return
+      const cancelled = cancellationOf(signal)
+      if (cancelled !== undefined) throw cancelled
+      committed = true
+    }
+    const invocation = Object.freeze({
+      commandId, agent, rawInput: parsed.rawInput, attachments, signal, commit,
+    })
     let result: CommandResult
     try {
       const output = command.definition.handler(invocation)
-      result = normalizeResult(parsed.name, await withAbort(Promise.resolve(output), signal))
+      result = normalizeResult(parsed.name, await withAbort(Promise.resolve(output), signal, () => committed))
     } catch (error: unknown) {
       this.settleThrown(agent.session, parsed.name, commandId, error)
       throw error

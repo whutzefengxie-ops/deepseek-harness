@@ -30,7 +30,7 @@ Registration and removal emit the unfiltered, non-vetoing `commands/change` regi
 
 ### Direct dispatch and cancellation
 
-Commands run in a human-only command plane. The registry does not turn their input into `user/message`, their output does not become a session event, and neither is sent to the model implicitly. A handler receives the exact target agent, raw input, and request-owned `AbortSignal`; a producer may explicitly schedule separate model-visible work through that agent and then owns its logging and lifecycle contract. The registry stops awaiting an uncooperative handler when the signal aborts; the handler remains responsible for stopping external side effects already started.
+Commands run in a human-only command plane. The registry does not turn their input into `user/message`, their output does not become a session event, and neither is sent to the model implicitly. A handler receives the exact target agent, raw input, and request-owned `AbortSignal`; a producer may explicitly schedule separate model-visible work through that agent and then owns its logging and lifecycle contract. Before publishing an irrevocable domain mutation that transfers settlement ownership away from the request, the handler calls `invocation.commit()`. The call rejects an already-aborted request; once it returns, later request cancellation does not reject dispatch, and the handler owns its result and any admitted detached work. Without that transfer, the registry stops awaiting an uncooperative handler when the signal aborts.
 
 Expected handler failures return `CommandResult.error`. Thrown or malformed results remain adapter-visible command failures, not model messages. This boundary deliberately separates UI output from durable domain mutation: a goal command may change `ctx.goals`, for example, but the goal service owns that persisted state.
 
@@ -42,7 +42,7 @@ Each submitted command owns an `AbortController`. TUI disposal aborts outstandin
 
 ## Testing
 
-The registry suite covers syntax boundaries, immutable normalization, runtime metadata validation, deterministic sorting, global and scoped shadowing, duplicate rejection, exact disposal, contained change-notification failures, direct invocation, expected and malformed results, synchronous and asynchronous failure, and every abort timing edge at per-file 100% statement, branch, function, and line coverage.
+The registry suite covers syntax boundaries, immutable normalization, runtime metadata validation, deterministic sorting, global and scoped shadowing, duplicate rejection, exact disposal, contained change-notification failures, direct invocation, expected and malformed results, synchronous and asynchronous failure, pre-commit abort, and post-commit settlement.
 
 TUI tests exercise all migrated built-ins, live plugin discovery, help/autocomplete refresh, direct results, unknown-command rejection, raw-input delivery, definition removal, startup rollback, and disposal cancellation. Keyless terminal snapshots pin the rendered help, error, and command-result shapes.
 
@@ -61,11 +61,11 @@ TUI tests exercise all migrated built-ins, live plugin discovery, help/autocompl
 - Command producers are ordinary removable plugins, and TUI consumes their validated catalog and dispatch contract.
 - Agent-specific definitions retain existing flat scope and shadow semantics without a core-to-UI dependency.
 - Unknown slash input and command output are deterministic UI behavior with zero direct model tokens.
-- Direct command cancellation is isolated from model-turn cancellation.
+- Direct command cancellation is isolated from model-turn cancellation, and committed domain work is isolated from later UI-request cancellation.
 
 ## Known limitations and deferred work
 
 - Input metadata is limited to an unstructured text hint. Typed forms, argument schemas, and completion providers remain command-owned or require a later registry or consumer extension.
 - Generic command output is live-only and is not reconstructed after TUI restart.
-- Registry cancellation stops awaiting immediately, but external work stops only when a handler cooperates with its signal.
+- A committed handler cannot be cancelled by its UI request and must expose a domain-owned lifecycle for work that outlives dispatch.
 - The ACP automation server, headless CLI, and JSON-RPC SDK entry points do not expose the command plane; only TUI consumes it.

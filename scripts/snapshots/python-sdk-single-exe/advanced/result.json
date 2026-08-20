@@ -159,7 +159,7 @@
           "index": 0,
           "id": "advanced-define",
           "name": "cordis_define",
-          "argumentsDelta": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+          "argumentsDelta": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
         }
       }
     },
@@ -177,7 +177,7 @@
             "type": "tool-call",
             "id": "advanced-define",
             "name": "cordis_define",
-            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
           }
         }
       }
@@ -227,7 +227,7 @@
               "type": "tool-call",
               "id": "advanced-define",
               "name": "cordis_define",
-              "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+              "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
             }
           ],
           "source": {
@@ -260,7 +260,7 @@
         "step": 1,
         "callId": "advanced-define",
         "name": "cordis_define",
-        "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+        "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
       }
     },
     {
@@ -507,8 +507,71 @@
       }
     },
     {
-      "type": "request/header",
+      "type": "command/run",
       "seq": 28,
+      "time": 0,
+      "data": {
+        "commandId": "python-sdk-snapshot-review",
+        "name": "review",
+        "args": " inspect the Python SDK event projection",
+        "source": {
+          "kind": "user"
+        }
+      }
+    },
+    {
+      "type": "review/start",
+      "seq": 29,
+      "time": 0,
+      "data": {
+        "commandId": "python-sdk-snapshot-review",
+        "focus": "inspect the Python SDK event projection",
+        "request": {
+          "prompt": "Inspect the Python SDK event projection.",
+          "argv": [
+            "/snapshot/codex",
+            "exec",
+            "--json"
+          ],
+          "cwd": "/snapshot/workspace",
+          "timeoutMs": 1800000
+        }
+      }
+    },
+    {
+      "type": "command/done",
+      "seq": 30,
+      "time": 0,
+      "data": {
+        "commandId": "python-sdk-snapshot-review",
+        "kind": "success",
+        "sourceEventSeq": 29
+      }
+    },
+    {
+      "type": "review/activity",
+      "seq": 31,
+      "time": 0,
+      "data": {
+        "commandId": "python-sdk-snapshot-review",
+        "activityId": "turn",
+        "kind": "analysis",
+        "status": "completed"
+      }
+    },
+    {
+      "type": "review/end",
+      "seq": 32,
+      "time": 0,
+      "data": {
+        "commandId": "python-sdk-snapshot-review",
+        "outcome": "completed",
+        "text": "Python SDK reviewer projection complete."
+      }
+    },
+    {
+      "type": "request/header",
+      "seq": 33,
       "time": 0,
       "data": {
         "header": {
@@ -545,7 +608,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 29,
+      "seq": 34,
       "time": 0,
       "data": {
         "turn": 1,
@@ -559,7 +622,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 30,
+      "seq": 35,
       "time": 0,
       "data": {
         "turn": 1,
@@ -575,7 +638,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 31,
+      "seq": 36,
       "time": 0,
       "data": {
         "turn": 1,
@@ -594,7 +657,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 32,
+      "seq": 37,
       "time": 0,
       "data": {
         "turn": 1,
@@ -610,7 +673,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 33,
+      "seq": 38,
       "time": 0,
       "data": {
         "turn": 1,
@@ -625,7 +688,7 @@
     },
     {
       "type": "assistant/message",
-      "seq": 34,
+      "seq": 39,
       "time": 0,
       "data": {
         "turn": 1,
@@ -653,17 +716,17 @@
         }
       },
       "sourceEventSeqs": [
-        29,
-        30,
-        31,
-        32,
-        33
+        34,
+        35,
+        36,
+        37,
+        38
       ],
       "surfaceOp": "append"
     },
     {
       "type": "tool/call",
-      "seq": 35,
+      "seq": 40,
       "time": 0,
       "data": {
         "turn": 1,
@@ -675,7 +738,7 @@
     },
     {
       "type": "tool/code-dispatch-start",
-      "seq": 36,
+      "seq": 41,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
@@ -689,7 +752,7 @@
     },
     {
       "type": "tool/code-dispatch",
-      "seq": 37,
+      "seq": 42,
       "time": 0,
       "data": {
         "rootCallId": "advanced-code",
@@ -710,7 +773,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 38,
+      "seq": 43,
       "time": 0,
       "data": {
         "turn": 1,
@@ -738,13 +801,13 @@
         }
       },
       "sourceEventSeqs": [
-        35
+        40
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 39,
+      "seq": 44,
       "time": 0,
       "data": {
         "turn": 1,
@@ -753,7 +816,7 @@
     },
     {
       "type": "step/start",
-      "seq": 40,
+      "seq": 45,
       "time": 0,
       "data": {
         "turn": 1,
@@ -762,7 +825,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 41,
+      "seq": 46,
       "time": 0,
       "data": {
         "turn": 1,
@@ -776,7 +839,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 42,
+      "seq": 47,
       "time": 0,
       "data": {
         "turn": 1,
@@ -792,7 +855,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 43,
+      "seq": 48,
       "time": 0,
       "data": {
         "turn": 1,
@@ -811,7 +874,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 44,
+      "seq": 49,
       "time": 0,
       "data": {
         "turn": 1,
@@ -827,7 +890,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 45,
+      "seq": 50,
       "time": 0,
       "data": {
         "turn": 1,
@@ -842,7 +905,7 @@
     },
     {
       "type": "assistant/message",
-      "seq": 46,
+      "seq": 51,
       "time": 0,
       "data": {
         "turn": 1,
@@ -870,17 +933,17 @@
         }
       },
       "sourceEventSeqs": [
-        41,
-        42,
-        43,
-        44,
-        45
+        46,
+        47,
+        48,
+        49,
+        50
       ],
       "surfaceOp": "append"
     },
     {
       "type": "tool/call",
-      "seq": 47,
+      "seq": 52,
       "time": 0,
       "data": {
         "turn": 1,
@@ -892,7 +955,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 48,
+      "seq": 53,
       "time": 0,
       "data": {
         "turn": 1,
@@ -920,13 +983,13 @@
         }
       },
       "sourceEventSeqs": [
-        47
+        52
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 49,
+      "seq": 54,
       "time": 0,
       "data": {
         "turn": 1,
@@ -935,7 +998,7 @@
     },
     {
       "type": "step/start",
-      "seq": 50,
+      "seq": 55,
       "time": 0,
       "data": {
         "turn": 1,
@@ -944,7 +1007,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 51,
+      "seq": 56,
       "time": 0,
       "data": {
         "turn": 1,
@@ -958,7 +1021,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 52,
+      "seq": 57,
       "time": 0,
       "data": {
         "turn": 1,
@@ -974,7 +1037,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 53,
+      "seq": 58,
       "time": 0,
       "data": {
         "turn": 1,
@@ -993,7 +1056,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 54,
+      "seq": 59,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1009,7 +1072,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 55,
+      "seq": 60,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1024,7 +1087,7 @@
     },
     {
       "type": "assistant/message",
-      "seq": 56,
+      "seq": 61,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1052,17 +1115,17 @@
         }
       },
       "sourceEventSeqs": [
-        51,
-        52,
-        53,
-        54,
-        55
+        56,
+        57,
+        58,
+        59,
+        60
       ],
       "surfaceOp": "append"
     },
     {
       "type": "tool/call",
-      "seq": 57,
+      "seq": 62,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1074,7 +1137,7 @@
     },
     {
       "type": "tool-workflow/run-start",
-      "seq": 58,
+      "seq": 63,
       "time": 0,
       "data": {
         "runId": "{{workflow-run}}",
@@ -1083,7 +1146,7 @@
     },
     {
       "type": "tool-workflow/agent-start",
-      "seq": 59,
+      "seq": 64,
       "time": 0,
       "data": {
         "runId": "{{workflow-run}}",
@@ -1095,7 +1158,7 @@
     },
     {
       "type": "tool-workflow/agent-end",
-      "seq": 60,
+      "seq": 65,
       "time": 0,
       "data": {
         "runId": "{{workflow-run}}",
@@ -1105,7 +1168,7 @@
     },
     {
       "type": "tool-workflow/run-end",
-      "seq": 61,
+      "seq": 66,
       "time": 0,
       "data": {
         "runId": "{{workflow-run}}",
@@ -1114,7 +1177,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 62,
+      "seq": 67,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1142,13 +1205,13 @@
         }
       },
       "sourceEventSeqs": [
-        57
+        62
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 63,
+      "seq": 68,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1157,7 +1220,7 @@
     },
     {
       "type": "step/start",
-      "seq": 64,
+      "seq": 69,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1166,7 +1229,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 65,
+      "seq": 70,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1180,7 +1243,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 66,
+      "seq": 71,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1196,7 +1259,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 67,
+      "seq": 72,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1215,7 +1278,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 68,
+      "seq": 73,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1231,7 +1294,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 69,
+      "seq": 74,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1246,7 +1309,7 @@
     },
     {
       "type": "assistant/message",
-      "seq": 70,
+      "seq": 75,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1274,17 +1337,17 @@
         }
       },
       "sourceEventSeqs": [
-        65,
-        66,
-        67,
-        68,
-        69
+        70,
+        71,
+        72,
+        73,
+        74
       ],
       "surfaceOp": "append"
     },
     {
       "type": "tool/call",
-      "seq": 71,
+      "seq": 76,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1296,7 +1359,7 @@
     },
     {
       "type": "tool/result",
-      "seq": 72,
+      "seq": 77,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1324,13 +1387,13 @@
         }
       },
       "sourceEventSeqs": [
-        71
+        76
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 73,
+      "seq": 78,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1339,7 +1402,7 @@
     },
     {
       "type": "step/start",
-      "seq": 74,
+      "seq": 79,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1348,7 +1411,7 @@
     },
     {
       "type": "request/header",
-      "seq": 75,
+      "seq": 80,
       "time": 0,
       "data": {
         "header": {
@@ -1384,7 +1447,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 76,
+      "seq": 81,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1398,7 +1461,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 77,
+      "seq": 82,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1412,7 +1475,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 78,
+      "seq": 83,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1429,7 +1492,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 79,
+      "seq": 84,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1445,7 +1508,7 @@
     },
     {
       "type": "assistant/chunk",
-      "seq": 80,
+      "seq": 85,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1460,7 +1523,7 @@
     },
     {
       "type": "assistant/message",
-      "seq": 81,
+      "seq": 86,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1486,17 +1549,17 @@
         }
       },
       "sourceEventSeqs": [
-        76,
-        77,
-        78,
-        79,
-        80
+        81,
+        82,
+        83,
+        84,
+        85
       ],
       "surfaceOp": "append"
     },
     {
       "type": "step/end",
-      "seq": 82,
+      "seq": 87,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1505,7 +1568,7 @@
     },
     {
       "type": "turn/end",
-      "seq": 83,
+      "seq": 88,
       "time": 0,
       "data": {
         "turn": 1,
@@ -1738,7 +1801,7 @@
               "index": 0,
               "id": "advanced-define",
               "name": "cordis_define",
-              "argumentsDelta": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+              "argumentsDelta": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
             }
           }
         }
@@ -1762,7 +1825,7 @@
                 "type": "tool-call",
                 "id": "advanced-define",
                 "name": "cordis_define",
-                "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
               }
             }
           }
@@ -1830,7 +1893,7 @@
                   "type": "tool-call",
                   "id": "advanced-define",
                   "name": "cordis_define",
-                  "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+                  "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
                 }
               ],
               "source": {
@@ -1869,7 +1932,7 @@
             "step": 1,
             "callId": "advanced-define",
             "name": "cordis_define",
-            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
+            "arguments": "{\"plugin\": {\"kind\": \"new\", \"idPrefix\": \"snap\"}, \"name\": \"Snapshot Double\", \"purpose\": \"Expose a deterministic doubling tool for executable snapshot verification.\", \"code\": {\"host\": \"return (ctx) => {\\n  let reviewEmitted = false\\n  ctx.on('agent/request', ({ agent }, next) => {\\n    if (reviewEmitted) return next()\\n    reviewEmitted = true\\n    const commandId = 'python-sdk-snapshot-review'\\n    agent.session.append('command/run', {\\n      commandId,\\n      name: 'review',\\n      args: ' inspect the Python SDK event projection',\\n      source: { kind: 'user' }\\n    })\\n    const start = agent.session.append('review/start', {\\n      commandId,\\n      focus: 'inspect the Python SDK event projection',\\n      request: {\\n        prompt: 'Inspect the Python SDK event projection.',\\n        argv: ['/snapshot/codex', 'exec', '--json'],\\n        cwd: '/snapshot/workspace',\\n        timeoutMs: 1800000\\n      }\\n    })\\n    agent.session.append('command/done', {\\n      commandId,\\n      kind: 'success',\\n      sourceEventSeq: start.seq\\n    })\\n    agent.session.append('review/activity', {\\n      commandId,\\n      activityId: 'turn',\\n      kind: 'analysis',\\n      status: 'completed'\\n    })\\n    agent.session.append('review/end', {\\n      commandId,\\n      outcome: 'completed',\\n      text: 'Python SDK reviewer projection complete.'\\n    })\\n    return next()\\n  })\\n  harness.registerTool(ctx, harness.defineTool({\\n    name: 'snapshot_double',\\n    description: 'Double a number for executable snapshot verification.',\\n    parameters: { value: { type: 'number', required: true } },\\n    output: {\\n      schema: { type: 'number' },\\n      render(_args, value) {\\n        return [{ type: 'text', text: String(value) }]\\n      }\\n    },\\n    async execute(args) {\\n      return args.value * 2\\n    }\\n  }))\\n}\\n\"}}"
           }
         }
       }
@@ -2200,8 +2263,101 @@
       "payload": {
         "sessionId": "{{parent}}",
         "event": {
-          "type": "request/header",
+          "type": "command/run",
           "seq": 28,
+          "time": 0,
+          "data": {
+            "commandId": "python-sdk-snapshot-review",
+            "name": "review",
+            "args": " inspect the Python SDK event projection",
+            "source": {
+              "kind": "user"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "review/start",
+          "seq": 29,
+          "time": 0,
+          "data": {
+            "commandId": "python-sdk-snapshot-review",
+            "focus": "inspect the Python SDK event projection",
+            "request": {
+              "prompt": "Inspect the Python SDK event projection.",
+              "argv": [
+                "/snapshot/codex",
+                "exec",
+                "--json"
+              ],
+              "cwd": "/snapshot/workspace",
+              "timeoutMs": 1800000
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "command/done",
+          "seq": 30,
+          "time": 0,
+          "data": {
+            "commandId": "python-sdk-snapshot-review",
+            "kind": "success",
+            "sourceEventSeq": 29
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "review/activity",
+          "seq": 31,
+          "time": 0,
+          "data": {
+            "commandId": "python-sdk-snapshot-review",
+            "activityId": "turn",
+            "kind": "analysis",
+            "status": "completed"
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "review/end",
+          "seq": 32,
+          "time": 0,
+          "data": {
+            "commandId": "python-sdk-snapshot-review",
+            "outcome": "completed",
+            "text": "Python SDK reviewer projection complete."
+          }
+        }
+      }
+    },
+    {
+      "method": "session.event",
+      "payload": {
+        "sessionId": "{{parent}}",
+        "event": {
+          "type": "request/header",
+          "seq": 33,
           "time": 0,
           "data": {
             "header": {
@@ -2244,7 +2400,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 29,
+          "seq": 34,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2264,7 +2420,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 30,
+          "seq": 35,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2286,7 +2442,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 31,
+          "seq": 36,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2311,7 +2467,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 32,
+          "seq": 37,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2333,7 +2489,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 33,
+          "seq": 38,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2354,7 +2510,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 34,
+          "seq": 39,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2382,11 +2538,11 @@
             }
           },
           "sourceEventSeqs": [
-            29,
-            30,
-            31,
-            32,
-            33
+            34,
+            35,
+            36,
+            37,
+            38
           ],
           "surfaceOp": "append"
         }
@@ -2398,7 +2554,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 35,
+          "seq": 40,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2416,7 +2572,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/code-dispatch-start",
-          "seq": 36,
+          "seq": 41,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
@@ -2436,7 +2592,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/code-dispatch",
-          "seq": 37,
+          "seq": 42,
           "time": 0,
           "data": {
             "rootCallId": "advanced-code",
@@ -2463,7 +2619,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 38,
+          "seq": 43,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2491,7 +2647,7 @@
             }
           },
           "sourceEventSeqs": [
-            35
+            40
           ],
           "surfaceOp": "append"
         }
@@ -2503,7 +2659,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 39,
+          "seq": 44,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2518,7 +2674,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 40,
+          "seq": 45,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2533,7 +2689,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 41,
+          "seq": 46,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2553,7 +2709,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 42,
+          "seq": 47,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2575,7 +2731,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 43,
+          "seq": 48,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2600,7 +2756,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 44,
+          "seq": 49,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2622,7 +2778,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 45,
+          "seq": 50,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2643,7 +2799,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 46,
+          "seq": 51,
           "time": 0,
           "data": {
             "turn": 1,
@@ -2671,11 +2827,11 @@
             }
           },
           "sourceEventSeqs": [
-            41,
-            42,
-            43,
-            44,
-            45
+            46,
+            47,
+            48,
+            49,
+            50
           ],
           "surfaceOp": "append"
         }
@@ -2687,7 +2843,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 47,
+          "seq": 52,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3153,7 +3309,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 48,
+          "seq": 53,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3181,7 +3337,7 @@
             }
           },
           "sourceEventSeqs": [
-            47
+            52
           ],
           "surfaceOp": "append"
         }
@@ -3193,7 +3349,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 49,
+          "seq": 54,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3208,7 +3364,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 50,
+          "seq": 55,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3223,7 +3379,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 51,
+          "seq": 56,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3243,7 +3399,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 52,
+          "seq": 57,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3265,7 +3421,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 53,
+          "seq": 58,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3290,7 +3446,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 54,
+          "seq": 59,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3312,7 +3468,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 55,
+          "seq": 60,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3333,7 +3489,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 56,
+          "seq": 61,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3361,11 +3517,11 @@
             }
           },
           "sourceEventSeqs": [
-            51,
-            52,
-            53,
-            54,
-            55
+            56,
+            57,
+            58,
+            59,
+            60
           ],
           "surfaceOp": "append"
         }
@@ -3377,7 +3533,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 57,
+          "seq": 62,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3395,7 +3551,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-start",
-          "seq": 58,
+          "seq": 63,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3653,7 +3809,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-start",
-          "seq": 59,
+          "seq": 64,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3875,7 +4031,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/agent-end",
-          "seq": 60,
+          "seq": 65,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3891,7 +4047,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool-workflow/run-end",
-          "seq": 61,
+          "seq": 66,
           "time": 0,
           "data": {
             "runId": "{{workflow-run}}",
@@ -3906,7 +4062,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 62,
+          "seq": 67,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3934,7 +4090,7 @@
             }
           },
           "sourceEventSeqs": [
-            57
+            62
           ],
           "surfaceOp": "append"
         }
@@ -3946,7 +4102,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 63,
+          "seq": 68,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3961,7 +4117,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 64,
+          "seq": 69,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3976,7 +4132,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 65,
+          "seq": 70,
           "time": 0,
           "data": {
             "turn": 1,
@@ -3996,7 +4152,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 66,
+          "seq": 71,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4018,7 +4174,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 67,
+          "seq": 72,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4043,7 +4199,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 68,
+          "seq": 73,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4065,7 +4221,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 69,
+          "seq": 74,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4086,7 +4242,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 70,
+          "seq": 75,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4114,11 +4270,11 @@
             }
           },
           "sourceEventSeqs": [
-            65,
-            66,
-            67,
-            68,
-            69
+            70,
+            71,
+            72,
+            73,
+            74
           ],
           "surfaceOp": "append"
         }
@@ -4130,7 +4286,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/call",
-          "seq": 71,
+          "seq": 76,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4148,7 +4304,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "tool/result",
-          "seq": 72,
+          "seq": 77,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4176,7 +4332,7 @@
             }
           },
           "sourceEventSeqs": [
-            71
+            76
           ],
           "surfaceOp": "append"
         }
@@ -4188,7 +4344,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 73,
+          "seq": 78,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4203,7 +4359,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/start",
-          "seq": 74,
+          "seq": 79,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4218,7 +4374,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "request/header",
-          "seq": 75,
+          "seq": 80,
           "time": 0,
           "data": {
             "header": {
@@ -4260,7 +4416,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 76,
+          "seq": 81,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4280,7 +4436,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 77,
+          "seq": 82,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4300,7 +4456,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 78,
+          "seq": 83,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4323,7 +4479,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 79,
+          "seq": 84,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4345,7 +4501,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/chunk",
-          "seq": 80,
+          "seq": 85,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4366,7 +4522,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "assistant/message",
-          "seq": 81,
+          "seq": 86,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4392,11 +4548,11 @@
             }
           },
           "sourceEventSeqs": [
-            76,
-            77,
-            78,
-            79,
-            80
+            81,
+            82,
+            83,
+            84,
+            85
           ],
           "surfaceOp": "append"
         }
@@ -4408,7 +4564,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "step/end",
-          "seq": 82,
+          "seq": 87,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4423,7 +4579,7 @@
         "sessionId": "{{parent}}",
         "event": {
           "type": "turn/end",
-          "seq": 83,
+          "seq": 88,
           "time": 0,
           "data": {
             "turn": 1,
@@ -4442,5 +4598,5 @@
       }
     }
   ],
-  "session_root": "{{cwd}}/sessions"
+  "session_root": "{{cwd}}\\sessions"
 }

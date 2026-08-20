@@ -494,6 +494,10 @@ export interface Config {
   maxOutputBytes?: number
   /** Escalation grace in milliseconds for process-tree termination. */
   terminateGraceMs?: number
+  /** Maximum elapsed time for one review before its process tree is terminated. */
+  timeoutMs?: number
+  /** Maximum reviews admitted concurrently for one Agent. */
+  maxConcurrentReviews?: number
 }
 
 /** One Codex reasoning-effort level. */
@@ -503,7 +507,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-Source: [`packages/interaction/command-reviewer/src/index.ts:63`](../packages/interaction/command-reviewer/src/index.ts)
+Source: [`packages/interaction/command-reviewer/src/index.ts:70`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

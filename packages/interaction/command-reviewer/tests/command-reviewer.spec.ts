@@ -2,7 +2,7 @@ import { PassThrough, Readable } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -51,8 +51,11 @@ class StubSubprocess extends SubprocessRuntime {
   nextChunks: Array<string | Buffer | Uint8Array> | undefined
   collectStderr = true
   terminateStreamError = false
+  terminateDoneError: Error | undefined
   manual = false
   manualWait = false
+  waitError: Error | undefined
+  waitResult = true
   resolveGate: Promise<undefined> | undefined
   afterResolve: (() => void) | undefined
   onSpawn: (() => void) | undefined
@@ -61,14 +64,16 @@ class StubSubprocess extends SubprocessRuntime {
   liveDone: PromiseWithResolvers<SubprocessOutcome> | undefined
   waitGates: Array<PromiseWithResolvers<boolean>> = []
   waits: Array<ReturnType<typeof vi.fn>> = []
+  resolvedExecutable = '/resolved/codex'
 
   override async resolveExecutable(command: string, _env?: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<string> {
     signal?.throwIfAborted()
     this.lookups.push(command)
     if (this.resolveGate !== undefined) await this.resolveGate
+    signal?.throwIfAborted()
     if (this.resolveError !== undefined) throw this.resolveError
     this.afterResolve?.()
-    return '/resolved/codex'
+    return command === 'cmd.exe' ? '/resolved/cmd.exe' : this.resolvedExecutable
   }
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
@@ -90,11 +95,14 @@ class StubSubprocess extends SubprocessRuntime {
         if (this.terminateStreamError) (stream as PassThrough).destroy(new Error('terminated stream'))
         else (stream as PassThrough).end()
       }
-      done.resolve({ exitCode: null, signal: 'SIGTERM' })
+      if (this.terminateDoneError === undefined) done.resolve({ exitCode: null, signal: 'SIGTERM' })
+      else done.reject(this.terminateDoneError)
     })
     const waitGate = this.manualWait ? Promise.withResolvers<boolean>() : undefined
     if (waitGate !== undefined) this.waitGates.push(waitGate)
-    const waitForExit = vi.fn(() => waitGate?.promise ?? Promise.resolve(true))
+    const waitForExit = vi.fn(() => this.waitError === undefined
+      ? waitGate?.promise ?? Promise.resolve(this.waitResult)
+      : Promise.reject(this.waitError))
     this.terminations.push(terminate)
     this.waits.push(waitForExit)
     spec.signal?.addEventListener('abort', terminate, { once: true })
@@ -207,9 +215,70 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
       .rejects.toThrow(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
     await ctx.fiber.dispose()
   })
+
+  it('rejects a review timeout outside the Node timer range', async () => {
+    const ctx = new Context()
+    await ctx.plugin(CommandRuntime)
+    await ctx.plugin(StubSubprocess)
+    await expect(ctx.plugin(commandReviewer, { timeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .rejects.toThrow(`command-reviewer: timeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+    await ctx.fiber.dispose()
+  })
 })
 
 describe('/review durable background lifecycle', () => {
+  it('settles both lifecycles when an admitted persisted review resumes before command acknowledgment', async () => {
+    const test = await harness()
+    const commandId = CommandId('review-from-stopped-host')
+    test.agent.session.append('command/run', {
+      commandId, name: 'review', args: ' inspect recovery', source: { kind: 'user' },
+    })
+    const start = test.agent.session.append('review/start', {
+      commandId,
+      focus: 'inspect recovery',
+      request: {
+        prompt: 'review prior work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(), timeoutMs: 1_800_000,
+      },
+    })
+    agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
+    agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
+
+    expect(test.agent.session.events.filter(event => event.type === 'command/done')).toMatchObject([{
+      data: { commandId, kind: 'success', sourceEventSeq: start.seq },
+    }])
+    expect(test.agent.session.events.filter(event => event.type === 'review/end')).toMatchObject([{
+      data: {
+        commandId,
+        outcome: 'interrupted',
+        text: 'Review interrupted because its previous host stopped before recording completion.',
+      },
+    }])
+
+    const acknowledgedId = CommandId('review-acknowledged-before-stop')
+    test.agent.session.append('command/run', {
+      commandId: acknowledgedId, name: 'review', args: ' acknowledged', source: { kind: 'user' },
+    })
+    const acknowledgedStart = test.agent.session.append('review/start', {
+      commandId: acknowledgedId,
+      focus: 'acknowledged',
+      request: {
+        prompt: 'review acknowledged work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(), timeoutMs: 1_800_000,
+      },
+    })
+    test.agent.session.append('command/done', {
+      commandId: acknowledgedId, kind: 'success', sourceEventSeq: acknowledgedStart.seq,
+    })
+
+    agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
+
+    expect(test.agent.session.events.filter(event => (
+      event.type === 'command/done' && event.data.commandId === acknowledgedId
+    ))).toHaveLength(1)
+    expect(test.agent.session.events.filter(event => (
+      event.type === 'review/end' && event.data.commandId === acknowledgedId
+    ))).toHaveLength(1)
+  })
+
   it('returns after starting instead of waiting for Codex', async () => {
     const test = await harness({ cwd: 'C:\\work\\repo' })
     seed(test)
@@ -224,6 +293,7 @@ describe('/review durable background lifecycle', () => {
 
     const [spec] = test.subprocess.spawns
     expect(spec?.argv).toContain('--json')
+    expect(spec?.argv[0]).toBe('/resolved/codex')
     expect(spec?.cwd).toBe('C:\\work\\repo')
     expect(spec?.stdio.stdout).toBe('pipe')
     expect(spec?.signal).toBeInstanceOf(AbortSignal)
@@ -233,11 +303,42 @@ describe('/review durable background lifecycle', () => {
     const boundary = spec.stdio.stdin.data.match(/<untrusted-transcript-([0-9a-f-]{36})>/)?.[1]
     expect(boundary).toBeDefined()
     expect(spec.stdio.stdin.data).toContain(`</untrusted-transcript-${boundary}>`)
+    if (start?.type !== 'review/start') throw new Error('review/start missing')
+    expect(start.data.request).toEqual({
+      prompt: spec.stdio.stdin.data,
+      argv: spec.argv,
+      cwd: spec.cwd,
+      timeoutMs: 1_800_000,
+    })
 
     test.subprocess.complete()
     expect((await reviewEnd(test)).data).toEqual({
       commandId: execution.commandId, outcome: 'completed', text: 'Review text.',
     })
+  })
+
+  it('does not send request-configuration context to Codex as user dialogue', async () => {
+    const test = await harness()
+    seed(test)
+    for (const [text, source] of [
+      ['workspace rules', { kind: 'plugin', plugin: 'instructions', form: 'instructions' }],
+      ['available skills', { kind: 'plugin', plugin: 'skills', form: 'catalog' }],
+      ['runtime policy', { kind: 'plugin', plugin: 'runtime', form: 'snapshot', sections: [] }],
+    ] as const) {
+      test.agent.session.append('user/message', createUserMessage({
+        content: [{ type: 'text', text }], source,
+      }), { surfaceOp: 'append' })
+    }
+
+    await run(test)
+
+    const stdin = test.subprocess.spawns[0]?.stdio.stdin
+    if (typeof stdin !== 'object') throw new Error('expected batch stdin')
+    expect(stdin.data).toContain('User: fix the bug')
+    expect(stdin.data).toContain('Agent: done')
+    expect(stdin.data).not.toContain('workspace rules')
+    expect(stdin.data).not.toContain('available skills')
+    expect(stdin.data).not.toContain('runtime policy')
   })
 
   it('keeps running after the browser invocation signal aborts', async () => {
@@ -254,6 +355,24 @@ describe('/review durable background lifecycle', () => {
     test.subprocess.complete(reviewJson('Still completed.'))
     expect((await reviewEnd(test)).data).toMatchObject({
       commandId: execution.commandId, outcome: 'completed', text: 'Still completed.',
+    })
+  })
+
+  it('settles the command from the admitted review when the browser aborts inside spawn', async () => {
+    const test = await harness()
+    seed(test)
+    const browser = new AbortController()
+    test.subprocess.onSpawn = () => { browser.abort(new Error('browser disconnected during spawn')) }
+
+    const execution = await run(test, '', browser)
+
+    const start = test.agent.session.events.find(event => event.type === 'review/start')
+    expect(execution.result).toEqual({ kind: 'success', sourceEventSeq: start?.seq })
+    expect(test.agent.session.events.filter(event => event.type === 'command/done')).toMatchObject([{
+      data: { commandId: execution.commandId, kind: 'success', sourceEventSeq: start?.seq },
+    }])
+    expect((await reviewEnd(test)).data).toMatchObject({
+      commandId: execution.commandId, outcome: 'completed', text: 'Review text.',
     })
   })
 
@@ -308,6 +427,20 @@ describe('/review durable background lifecycle', () => {
     test.subprocess.nextStdout = `${JSON.stringify({ type: 'turn.failed', error: { message: 'authentication failed' } })}\n`
     await run(test)
     expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'failed', text: 'The review failed: authentication failed' })
+  })
+
+  it('reports a structured Codex failure together with its nonzero exit', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = `${JSON.stringify({ type: 'turn.failed', error: { message: 'authentication failed' } })}\n`
+    test.subprocess.nextOutcome = { exitCode: 1, signal: null }
+
+    await run(test)
+
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'failed',
+      text: 'The review failed: codex exited with code 1. Codex reported: authentication failed',
+    })
   })
 
   it('records malformed JSONL, missing output, nonzero exit, and output overflow as failures', async () => {
@@ -432,16 +565,180 @@ describe('/review durable background lifecycle', () => {
     expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'completed', text: 'Last line.' })
   })
 
-  it('reuses one owner for concurrent reviews and drains both on teardown', async () => {
+  it('rejects a second concurrent review for the same Agent by default', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    const first = await run(test, ' first')
+    const second = await run(test, ' second')
+    expect(first.result.kind).toBe('success')
+    expect(second.result).toEqual({
+      kind: 'error',
+      text: 'This agent already has 1 active review(s); the configured limit is 1.',
+    })
+    expect(test.subprocess.spawns).toHaveLength(1)
+    await test.plugin.dispose()
+    expect(test.subprocess.terminations).toHaveLength(1)
+    expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
+  })
+
+  it('reserves the Agent limit before asynchronous executable resolution', async () => {
+    const test = await harness()
+    seed(test)
+    const resolution = Promise.withResolvers<undefined>()
+    test.subprocess.resolveGate = resolution.promise
+
+    const first = run(test, ' first')
+    await vi.waitFor(() => { expect(test.subprocess.lookups).toEqual(['codex']) })
+    const second = await run(test, ' second')
+    expect(second.result).toMatchObject({ kind: 'error' })
+    expect(test.subprocess.lookups).toEqual(['codex'])
+
+    resolution.resolve(undefined)
+    expect((await first).result.kind).toBe('success')
+    await test.plugin.dispose()
+  })
+
+  it('admits another review after the first one settles', async () => {
     const test = await harness()
     seed(test)
     test.subprocess.manual = true
     await run(test, ' first')
-    await run(test, ' second')
+    test.subprocess.complete(reviewJson('First.'))
+    await reviewEnd(test)
+
+    test.subprocess.liveStream = undefined
+    test.subprocess.liveDone = undefined
+    const second = await run(test, ' second')
+    expect(second.result.kind).toBe('success')
     expect(test.subprocess.spawns).toHaveLength(2)
     await test.plugin.dispose()
-    expect(test.subprocess.terminations).toHaveLength(2)
-    expect(test.subprocess.terminations.every(terminate => terminate.mock.calls.length === 1)).toBe(true)
+  })
+
+  it('honors a configured per-Agent concurrency limit', async () => {
+    const test = await harness({ config: { maxConcurrentReviews: 2 } })
+    seed(test)
+    test.subprocess.manual = true
+    expect((await run(test, ' first')).result.kind).toBe('success')
+    expect((await run(test, ' second')).result.kind).toBe('success')
+    expect((await run(test, ' third')).result.kind).toBe('error')
+    expect(test.subprocess.spawns).toHaveLength(2)
+    await test.plugin.dispose()
+  })
+
+  it('terminates the process tree and records a visible timeout failure', async () => {
+    const test = await harness({ config: { timeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.manualWait = true
+    test.subprocess.terminateStreamError = true
+    await run(test)
+
+    await vi.waitFor(() => {
+      expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
+      expect(test.subprocess.waits[0]).toHaveBeenCalledOnce()
+    })
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    test.subprocess.waitGates[0]?.resolve(true)
+    const end = await reviewEnd(test)
+    expect(end.data).toMatchObject({
+      outcome: 'failed', text: 'The review timed out after 10ms.',
+    })
+  })
+
+  it('classifies a cleanly closed stream after deadline as timed out', async () => {
+    const test = await harness({ config: { timeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    await run(test)
+
+    expect((await reviewEnd(test)).data).toEqual(expect.objectContaining({
+      outcome: 'failed', text: 'The review timed out after 10ms.',
+    }))
+  })
+
+  it('keeps the review owned when process-tree exit cannot be confirmed after an output failure', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = '{bad}\n'
+    test.subprocess.waitError = new Error('tree liveness probe failed')
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+    const logged = vi.spyOn(test.ctx.logger, 'error')
+
+    await run(test)
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('tree liveness probe failed'))
+    })
+
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    expect((await run(test, ' retry')).result).toMatchObject({ kind: 'error' })
+    await expect(test.plugin.dispose()).resolves.toBeUndefined()
+    expect(logged.mock.calls.some(([error]) => String(error).includes('subprocess cleanup failed before quiescence'))).toBe(true)
+  })
+
+  it('requires an affirmative process-tree exit result', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.waitResult = false
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    await run(test)
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('without confirming exit'))
+    })
+
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    await test.plugin.dispose()
+  })
+
+  it('combines an output failure with an independent process-completion rejection', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.terminateDoneError = new Error('spawn transport failed')
+    await run(test)
+
+    test.subprocess.liveStream?.write('{bad}\n')
+    test.subprocess.liveStream?.end()
+
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toMatch(/invalid JSON.*Process completion also failed: spawn transport failed/su)
+  })
+
+  it('keeps a timed-out review owned when process-tree exit cannot be confirmed', async () => {
+    const test = await harness({ config: { timeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.terminateStreamError = true
+    test.subprocess.waitError = new Error('timeout tree liveness probe failed')
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+    const logged = vi.spyOn(test.ctx.logger, 'error')
+
+    await run(test)
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('timeout tree liveness probe failed'))
+    })
+
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    await expect(test.plugin.dispose()).resolves.toBeUndefined()
+    expect(logged.mock.calls.some(([error]) => String(error).includes('subprocess cleanup failed before quiescence'))).toBe(true)
+  })
+
+  it('resolves a batch wrapper and command interpreter in the subprocess provider world', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.resolvedExecutable = String.raw`C:\\sandbox\\bin\\codex.cmd`
+    await run(test)
+
+    expect(test.subprocess.lookups).toEqual(['codex', 'cmd.exe'])
+    expect(test.subprocess.spawns[0]).toMatchObject({
+      argv: [
+        '/resolved/cmd.exe', '/d', '/q', '/v:off', '/s', '/c',
+        '%DSH_CODEX_REVIEWER_EXECUTABLE% exec --json --color never --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort=medium',
+      ],
+      env: { DSH_CODEX_REVIEWER_EXECUTABLE: String.raw`"C:\\sandbox\\bin\\codex.cmd"` },
+    })
   })
 
   it('settles a spawn failure in the durable reviewer card', async () => {
@@ -492,6 +789,22 @@ describe('/review durable background lifecycle', () => {
     expect(disposed).toBe(true)
     expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
     expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'cancelled' })
+  })
+
+  it('rejects teardown without a terminal record when process-tree exit cannot be confirmed', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.waitError = new Error('teardown tree liveness probe failed')
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+    const logged = vi.spyOn(test.ctx.logger, 'error')
+    await run(test)
+
+    await expect(test.plugin.dispose()).resolves.toBeUndefined()
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('teardown tree liveness probe failed'))
+    expect(logged.mock.calls.some(([error]) => String(error).includes('subprocess cleanup failed before quiescence'))).toBe(true)
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
   })
 
   it('classifies a stream failure during owner cancellation as cancelled', async () => {
@@ -564,6 +877,7 @@ describe('/review durable background lifecycle', () => {
     aborted.abort(new Error('cancelled'))
     expect(await definition.handler({
       commandId: CommandId('pre-aborted'), agent: missing.agent, rawInput: '', attachments: [], signal: aborted.signal,
+      commit: () => { aborted.signal.throwIfAborted() },
     }))
       .toEqual({ kind: 'error', text: 'Review cancelled.' })
     expect(disabled.subprocess.spawns).toEqual([])
@@ -581,7 +895,34 @@ describe('/review durable background lifecycle', () => {
     if (definition === undefined) throw new Error('review command missing')
     expect(await definition.handler({
       commandId: CommandId('post-resolve-abort'), agent: test.agent, rawInput: '', attachments: [], signal: browser.signal,
+      commit: () => { browser.signal.throwIfAborted() },
     })).toEqual({ kind: 'error', text: 'Review cancelled.' })
+    expect(test.subprocess.spawns).toEqual([])
+  })
+
+  it('stops admission when owner teardown aborts executable resolution', async () => {
+    const test = await harness()
+    seed(test)
+    const gate = Promise.withResolvers<undefined>()
+    test.subprocess.resolveGate = gate.promise
+    const execution = run(test)
+    await vi.waitFor(() => { expect(test.subprocess.lookups).toEqual(['codex']) })
+    const disposal = test.plugin.dispose()
+    gate.resolve(undefined)
+
+    expect((await execution).result).toEqual({ kind: 'error', text: 'Review owner is stopping.' })
+    await disposal
+    expect(test.subprocess.spawns).toEqual([])
+  })
+
+  it('stops admission when teardown follows successful executable resolution', async () => {
+    const test = await harness()
+    seed(test)
+    let disposal: Promise<void> | undefined
+    test.subprocess.afterResolve = () => { disposal = test.plugin.dispose() }
+
+    expect((await run(test)).result).toEqual({ kind: 'error', text: 'Review owner is stopping.' })
+    await disposal
     expect(test.subprocess.spawns).toEqual([])
   })
 })

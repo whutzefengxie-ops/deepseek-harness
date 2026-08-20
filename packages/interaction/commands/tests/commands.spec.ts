@@ -266,6 +266,47 @@ describe('CommandRuntime', () => {
       .rejects.toThrow('aborted in handler')
   })
 
+  it('lets a committed handler own settlement after the request aborts', async () => {
+    const ctx = await mount()
+    const { agent } = await mintAgentScope(ctx, 'a')
+    const controller = new AbortController()
+    ctx.commands.register({
+      name: 'commit',
+      description: 'Commit durable work',
+      handler: (invocation) => {
+        invocation.commit()
+        controller.abort('request disconnected after commit')
+        return { kind: 'success', text: 'admitted' }
+      },
+    })
+
+    await expect(ctx.commands.execute(agent, '/commit', [], controller.signal)).resolves.toMatchObject({
+      result: { kind: 'success', text: 'admitted' },
+    })
+    expect(lifecycleOf(agent)).toMatchObject([
+      { type: 'command/run', data: { name: 'commit' } },
+      { type: 'command/done', data: { kind: 'success', text: 'admitted' } },
+    ])
+  })
+
+  it('rejects a commit attempted after request cancellation', async () => {
+    const ctx = await mount()
+    const { agent } = await mintAgentScope(ctx, 'a')
+    const controller = new AbortController()
+    ctx.commands.register({
+      name: 'late-commit',
+      description: 'Commit too late',
+      handler: (invocation) => {
+        controller.abort('cancelled before commit')
+        invocation.commit()
+        return { kind: 'success' }
+      },
+    })
+
+    await expect(ctx.commands.execute(agent, '/late-commit', [], controller.signal))
+      .rejects.toThrow('cancelled before commit')
+  })
+
   it('returns a detached expected-error result', async () => {
     const ctx = await mount()
     const { agent } = await mintAgentScope(ctx, 'a')

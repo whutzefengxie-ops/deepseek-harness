@@ -577,7 +577,7 @@ Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/
 'review/activity': ReviewActivityData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:57`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:72`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewend--log-only"></a>
 
@@ -591,7 +591,7 @@ Source: [`packages/interaction/command-reviewer/src/types.ts:57`](../packages/in
 'review/end': ReviewEndData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:62`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:77`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewstart--log-only"></a>
 
@@ -600,12 +600,12 @@ Source: [`packages/interaction/command-reviewer/src/types.ts:62`](../packages/in
 ```ts persistence-catalog
 /**
  * Opens one log-only review record.
- * @param data - command identity and optional human-supplied focus.
+ * @param data - command identity, human-supplied focus, and exact admitted request.
  */
 'review/start': ReviewStartData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:52`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:67`](../packages/interaction/command-reviewer/src/types.ts)
 
 ### `sandbox/*`
 

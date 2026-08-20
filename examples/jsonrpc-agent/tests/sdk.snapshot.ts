@@ -35,6 +35,8 @@ const liveConfig = join(testsDir, '..', 'cordis.yml')
 const replayConfig = join(testsDir, '..', 'cordis.snapshot.yml')
 const minimalLiveConfig = join(testsDir, '..', 'minimal.cordis.yml')
 const minimalReplayConfig = join(testsDir, '..', 'minimal.snapshot.cordis.yml')
+const reviewerLiveConfig = join(testsDir, '..', 'reviewer.cordis.yml')
+const reviewerReplayConfig = join(testsDir, '..', 'reviewer.snapshot.cordis.yml')
 const runtimeBin = fileURLToPath(new URL('../../../packages/examples/jsonrpc-demo/src/bin.ts', import.meta.url))
 const repoTsconfig = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
 
@@ -87,6 +89,7 @@ const SCENARIOS: SdkScenario[] = [
     prompt: 'Reply with exactly: SDK snapshot OK',
     sessionId: 'sdk-snapshot-text',
     children: 0,
+    configs: { live: reviewerLiveConfig, replay: reviewerReplayConfig },
   },
   {
     name: 'bash-tool',
@@ -210,9 +213,10 @@ function contextOfContents(contents: readonly string[]): NormalizeContext {
 async function hydrateReplayFixtures(scenario: SdkScenario, cwd: string): Promise<string[]> {
   const root = join(cwd, '.replay-fixtures')
   await mkdir(root, { recursive: true })
+  const jsonCwd = JSON.stringify(cwd).slice(1, -1)
   return Promise.all(fixtureFiles(scenario).map(async (source) => {
     const destination = join(root, basename(source))
-    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', cwd))
+    await writeFile(destination, (await readFile(source, 'utf8')).replaceAll('{{cwd}}', jsonCwd))
     return destination
   }))
 }

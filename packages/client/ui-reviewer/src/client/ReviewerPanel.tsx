@@ -9,7 +9,8 @@ function statusText(status: ReviewerChatData['status'], t: Props['t']): string {
   if (status === 'running') return t('running')
   if (status === 'completed') return t('completed')
   if (status === 'failed') return t('failed')
-  return t('cancelled')
+  if (status === 'cancelled') return t('cancelled')
+  return t('interrupted')
 }
 function dotState(status: ReviewerChatData['status']): StateDotState {
   if (status === 'running') return 'ongoing'

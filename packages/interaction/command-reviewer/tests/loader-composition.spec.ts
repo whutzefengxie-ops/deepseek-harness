@@ -126,9 +126,16 @@ describe('command-reviewer real Loader composition', () => {
     const [spec] = subprocess.spawns
     if (spec === undefined) throw new Error('no spawn recorded')
     expect(spec.cwd).toBe(root)
-    expect(spec.argv[0]).toBe(process.platform === 'win32' ? 'cmd.exe' : 'codex')
+    expect(spec.argv[0]).toBe('/loader/codex')
     if (typeof spec.stdio.stdin !== 'object') throw new Error('expected batch stdin')
     expect(spec.stdio.stdin.data).toContain('User: fix the loader')
+    if (start?.type !== 'review/start') throw new Error('review/start missing')
+    expect(start.data.request).toEqual({
+      prompt: spec.stdio.stdin.data,
+      argv: spec.argv,
+      cwd: root,
+      timeoutMs: 1_800_000,
+    })
 
     expect(session.events.filter(event => event.type === 'command/run' || event.type === 'command/done')
       .map(event => event.type)).toEqual(['command/run', 'command/done'])

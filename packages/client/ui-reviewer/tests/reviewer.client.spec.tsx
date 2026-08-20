@@ -87,7 +87,7 @@ describe('reviewer durable Conversation Definition', () => {
     expect(data(live)).toEqual(data(replay))
   })
 
-  it.each(['failed', 'cancelled'] as const)('restores a %s result after refresh', (outcome) => {
+  it.each(['failed', 'cancelled', 'interrupted'] as const)('restores a %s result after refresh', (outcome) => {
     expect(data(assemble([
       lifecycle[0]!,
       at(2, 'review/end', { commandId: 'cmd-1', outcome, text: `${outcome} details` }),
@@ -180,6 +180,7 @@ describe('ReviewerPanel', () => {
     ['running', 'ongoing', zh.running],
     ['failed', 'error', zh.failed],
     ['cancelled', 'warning', zh.cancelled],
+    ['interrupted', 'warning', zh.interrupted],
   ] as const)('renders the %s status and an empty activity list', (status, dot, label) => {
     const view = render(<ReviewerPanel {...panelProps({ focus: '', status, activities: [] })} />)
     expect(screen.getByText(label)).toBeTruthy()

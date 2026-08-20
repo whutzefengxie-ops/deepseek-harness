@@ -579,7 +579,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'review/activity': ReviewActivityData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:57`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:70`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewend--log-only"></a>
 
@@ -593,7 +593,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'review/end': ReviewEndData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:62`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:75`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewstart--log-only"></a>
 
@@ -602,12 +602,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```ts persistence-catalog
 /**
  * Opens one log-only review record.
- * @param data - command identity and optional human-supplied focus.
+ * @param data - command identity, human-supplied focus, and exact admitted request.
  */
 'review/start': ReviewStartData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:52`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:65`](../packages/interaction/command-reviewer/src/types.ts)
 
 ### `sandbox/*`
 

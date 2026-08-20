@@ -49,6 +49,45 @@ SNAPSHOT_WORKFLOW_CHILD_PROMPT = "Reply with exactly WORKFLOW_CHILD_OK and nothi
 SNAPSHOT_FINAL_TEXT = "ADVANCED_EXECUTABLE_OK"
 SNAPSHOT_PLUGIN_CODE = """\
 return (ctx) => {
+  let reviewEmitted = false
+  ctx.on('agent/request', ({ agent }, next) => {
+    if (reviewEmitted) return next()
+    reviewEmitted = true
+    const commandId = 'python-sdk-snapshot-review'
+    agent.session.append('command/run', {
+      commandId,
+      name: 'review',
+      args: ' inspect the Python SDK event projection',
+      source: { kind: 'user' }
+    })
+    const start = agent.session.append('review/start', {
+      commandId,
+      focus: 'inspect the Python SDK event projection',
+      request: {
+        prompt: 'Inspect the Python SDK event projection.',
+        argv: ['/snapshot/codex', 'exec', '--json'],
+        cwd: '/snapshot/workspace',
+        timeoutMs: 1800000
+      }
+    })
+    agent.session.append('command/done', {
+      commandId,
+      kind: 'success',
+      sourceEventSeq: start.seq
+    })
+    agent.session.append('review/activity', {
+      commandId,
+      activityId: 'turn',
+      kind: 'analysis',
+      status: 'completed'
+    })
+    agent.session.append('review/end', {
+      commandId,
+      outcome: 'completed',
+      text: 'Python SDK reviewer projection complete.'
+    })
+    return next()
+  })
   harness.registerTool(ctx, harness.defineTool({
     name: 'snapshot_double',
     description: 'Double a number for executable snapshot verification.',

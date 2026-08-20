@@ -2910,7 +2910,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CommandInvocation',
-    declaration: 'export interface CommandInvocation {\n    readonly commandId: CommandId;\n    readonly agent: Agent;\n    readonly rawInput: string;\n    readonly attachments: readonly ImageBlock[];\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface CommandInvocation {\n    readonly commandId: CommandId;\n    readonly agent: Agent;\n    readonly rawInput: string;\n    readonly attachments: readonly ImageBlock[];\n    readonly signal: AbortSignal;\n    readonly commit: () => void;\n}',
   },
   {
     name: 'CommandResult',

@@ -15,9 +15,9 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
-import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import {
-  buildReviewPrompt, codexReviewArgv, parseCodexJsonLine, renderTranscript,
+  buildReviewPrompt, codexNeedsCommandInterpreter, codexReviewLaunch, parseCodexJsonLine, renderTranscript,
   CODEX_MODEL_PATTERN, CODEX_SANDBOX_MODES, CODEX_THINKING_EFFORTS,
   type CodexSandbox, type CodexThinkingEffort,
 } from './codex.ts'
@@ -25,12 +25,13 @@ import type { ReviewEndData, ReviewStartData } from './types.ts'
 import type {} from './types.ts'
 
 export {
-  buildReviewPrompt, codexReviewArgv, parseCodexJsonLine, renderTranscript,
-  CODEX_MODEL_PATTERN, CODEX_SANDBOX_MODES, CODEX_THINKING_EFFORTS, TRANSCRIPT_PLACEHOLDER,
+  buildReviewPrompt, codexNeedsCommandInterpreter, codexReviewLaunch, parseCodexJsonLine, renderTranscript,
+  CODEX_BATCH_EXECUTABLE_ENV, CODEX_MODEL_PATTERN, CODEX_SANDBOX_MODES, CODEX_THINKING_EFFORTS, TRANSCRIPT_PLACEHOLDER,
 } from './codex.ts'
-export type { CodexJsonProgress, CodexReviewOptions, CodexSandbox, CodexThinkingEffort } from './codex.ts'
+export type { CodexJsonProgress, CodexReviewLaunch, CodexReviewOptions, CodexSandbox, CodexThinkingEffort } from './codex.ts'
 export type {
-  ReviewActivityData, ReviewActivityKind, ReviewActivityStatus, ReviewEndData, ReviewOutcome, ReviewStartData,
+  ReviewActivityData, ReviewActivityKind, ReviewActivityStatus, ReviewEndData, ReviewOutcome, ReviewRequestData,
+  ReviewStartData,
 } from './types.ts'
 
 export const name = 'command-reviewer'
@@ -58,6 +59,12 @@ const DEFAULT_MAX_TRANSCRIPT_CHARS = 200_000
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608
 /** Default escalation grace in milliseconds for process-tree termination. */
 const DEFAULT_TERMINATE_GRACE_MS = 3_000
+/** Default maximum elapsed time for one Codex review. */
+const DEFAULT_TIMEOUT_MS = 1_800_000
+/** Default concurrent review limit for one Agent. */
+const DEFAULT_MAX_CONCURRENT_REVIEWS = 1
+/** Timeout identity used to distinguish elapsed deadlines from owner teardown. */
+const REVIEW_TIMEOUT = 'COMMAND_REVIEW_TIMEOUT'
 
 /** User-settings section of the reviewer command. */
 export interface Config {
@@ -79,6 +86,10 @@ export interface Config {
   maxOutputBytes?: number
   /** Escalation grace in milliseconds for process-tree termination. */
   terminateGraceMs?: number
+  /** Maximum elapsed time for one review before its process tree is terminated. */
+  timeoutMs?: number
+  /** Maximum reviews admitted concurrently for one Agent. */
+  maxConcurrentReviews?: number
 }
 
 /** A section whose optional members all carry schema defaults. */
@@ -96,6 +107,8 @@ export const Config: z<Config> = z.object({
   maxTranscriptChars: z.number().step(1).min(1).default(DEFAULT_MAX_TRANSCRIPT_CHARS),
   maxOutputBytes: z.number().step(1).min(1).default(DEFAULT_MAX_OUTPUT_BYTES),
   terminateGraceMs: z.number().step(1).min(1).default(DEFAULT_TERMINATE_GRACE_MS),
+  timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+  maxConcurrentReviews: z.number().step(1).min(1).default(DEFAULT_MAX_CONCURRENT_REVIEWS),
 })
 
 /** Settings namespace carrying the reviewer's user-facing configuration. */
@@ -110,9 +123,13 @@ const NO_HISTORY: CommandResult = {
   text: 'No conversation output to review yet.',
 }
 const CANCELLED: CommandResult = { kind: 'error', text: 'Review cancelled.' }
+const INTERRUPTED_REVIEW_TEXT = 'Review interrupted because its previous host stopped before recording completion.'
 function assertConfig(config: Required<Config>): void {
   if (config.terminateGraceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  }
+  if (config.timeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`command-reviewer: timeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   }
 }
 
@@ -136,6 +153,29 @@ function appendReviewEvent<T extends 'review/start' | 'review/activity' | 'revie
 ): SessionEvent<T> {
   const append = session.append.bind(session) as (eventType: T, eventData: SessionEventMap[T]) => SessionEvent<T>
   return append(type, data)
+}
+
+/** Settle review and command prefixes whose owning Host is gone. */
+function recoverInterruptedReviews(agent: Agent): void {
+  const open = new Map<ReviewStartData['commandId'], SessionEvent<'review/start'>>()
+  const settledCommands = new Set<ReviewStartData['commandId']>()
+  for (const event of agent.session.events) {
+    if (event.type === 'review/start') open.set(event.data.commandId, event)
+    else if (event.type === 'review/end') open.delete(event.data.commandId)
+    else if (event.type === 'command/done') settledCommands.add(event.data.commandId)
+  }
+  for (const [commandId, start] of open) {
+    if (!settledCommands.has(commandId)) {
+      agent.session.append('command/done', {
+        commandId, kind: 'success', sourceEventSeq: start.seq,
+      })
+    }
+    appendReviewEvent(agent.session, 'review/end', {
+      commandId,
+      outcome: 'interrupted',
+      text: INTERRUPTED_REVIEW_TEXT,
+    })
+  }
 }
 
 function chunkBuffer(chunk: unknown): Buffer {
@@ -218,6 +258,7 @@ function exitFailure(handle: SubprocessHandle, outcome: SubprocessOutcome): stri
 interface ReviewOperation {
   readonly controller: AbortController
   readonly settled: Promise<void>
+  failure?: unknown
 }
 
 interface ReviewOwner {
@@ -240,13 +281,41 @@ function ensureOwner(
   }
   owner.cleanup = agent.ctx.effect(() => async () => {
     owner.stopping = true
-    for (const operation of owner.active) operation.controller.abort()
-    await Promise.allSettled([...owner.active].map(operation => operation.settled))
+    const operations = [...owner.active]
+    for (const operation of operations) operation.controller.abort()
+    await Promise.all(operations.map(operation => operation.settled))
+    const failures = operations.flatMap(operation => operation.failure === undefined ? [] : [operation.failure])
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'command-reviewer: subprocess cleanup failed before quiescence')
+    }
     /* v8 ignore next -- this disposer belongs to the same owner stored for this Agent. */
     if (owners.get(agent) === owner) owners.delete(agent)
   }, 'command-reviewer.agent()')
   owners.set(agent, owner)
   return owner
+}
+
+async function confirmProcessTreeExit(handle: SubprocessHandle): Promise<void> {
+  if (!await handle.waitForExit()) {
+    throw new Error('Codex process-tree exit wait ended without confirming exit')
+  }
+}
+
+function completedFailure(
+  handle: SubprocessHandle,
+  outcome: SubprocessOutcome,
+  output: ParsedOutput,
+): string | undefined {
+  const exited = outcome.exitCode !== 0 ? exitFailure(handle, outcome) : undefined
+  if (exited !== undefined && output.failure !== undefined) {
+    return `${exited} Codex reported: ${output.failure}`
+  }
+  if (exited !== undefined) return exited
+  if (output.failure !== undefined) return `The review failed: ${output.failure}`
+  if (output.finalText === undefined || output.finalText.trim().length === 0) {
+    return 'Codex completed without producing review output.'
+  }
+  return undefined
 }
 
 async function runReview(
@@ -259,7 +328,8 @@ async function runReview(
 ): Promise<void> {
   let output: ParsedOutput | undefined
   let failure: string | undefined
-  let externallyCancelled = false
+  let cancelled = false
+  let timedOut = false
   let terminationRequested = false
   const terminate = (): void => {
     if (terminationRequested) return
@@ -275,27 +345,39 @@ async function runReview(
       readJsonl(handle, config, session, commandId),
       outcomePromise,
     ])
-    await handle.waitForExit()
+    await confirmProcessTreeExit(handle)
     output = parsed
-    if (signal.aborted) {
-      externallyCancelled = true
-    } else if (outcome.exitCode !== 0) {
-      failure = exitFailure(handle, outcome)
-    } else if (output.failure !== undefined) {
-      failure = `The review failed: ${output.failure}`
-    } else if (output.finalText === undefined || output.finalText.trim().length === 0) {
-      failure = 'Codex completed without producing review output.'
+    timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
+    if (timedOut) {
+      failure = `The review timed out after ${config.timeoutMs}ms.`
+    } else if (signal.aborted) {
+      cancelled = true
+    } else {
+      failure = completedFailure(handle, outcome, output)
     }
   } catch (error: unknown) {
-    externallyCancelled = signal.aborted
-    if (!externallyCancelled) {
+    timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
+    cancelled = signal.aborted && !timedOut
+    if (timedOut) {
+      failure = `The review timed out after ${config.timeoutMs}ms.`
+    } else if (!cancelled) {
       failure = renderThrown(error)
-      terminate()
     }
-    await Promise.allSettled([handle.done, handle.waitForExit()])
+    if (!signal.aborted) terminate()
+    let doneFailure: unknown
+    try {
+      await handle.done
+    } catch (error: unknown) {
+      doneFailure = error
+    }
+    await confirmProcessTreeExit(handle)
+    if (!cancelled && doneFailure !== undefined && doneFailure !== error) {
+      const diagnostic = renderThrown(doneFailure)
+      failure = `${failure} Process completion also failed: ${diagnostic}`
+    }
   }
   const completedText = output?.finalText?.trim() ?? ''
-  const end: ReviewEndData = externallyCancelled
+  const end: ReviewEndData = cancelled
     ? { commandId, outcome: 'cancelled', text: 'Review cancelled because its owner stopped.' }
     : failure === undefined
       ? { commandId, outcome: 'completed', text: completedText }
@@ -318,6 +400,7 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   const owners = new Map<Agent, ReviewOwner>()
+  ctx.on('agent/session-start', ({ agent }) => { recoverInterruptedReviews(agent) })
   const handler = async (invocation: CommandInvocation): Promise<CommandResult> => {
     const resolved = resolvedConfig(current())
     if (!resolved.enabled) return DISABLED
@@ -333,57 +416,105 @@ export function apply(ctx: Context, config: Config): void {
       randomUUID(),
     )
 
+    const owner = ensureOwner(owners, invocation.agent)
+    /* v8 ignore next -- teardown unregisters the command; this guard only closes an in-flight dispatch race. */
+    if (owner.stopping) return { kind: 'error', text: 'Review owner is stopping.' }
+    if (owner.active.size >= resolved.maxConcurrentReviews) {
+      return {
+        kind: 'error',
+        text: `This agent already has ${owner.active.size} active review(s); the configured limit is ${resolved.maxConcurrentReviews}.`,
+      }
+    }
+
+    const controller = new AbortController()
+    const settlement = Promise.withResolvers<void>()
+    const operation: ReviewOperation = { controller, settled: settlement.promise }
+    let operationSettled = false
+    const settleOperation = (): void => {
+      /* v8 ignore next -- spawn/admission paths and the background continuation may converge during teardown. */
+      if (operationSettled) return
+      operationSettled = true
+      owner.active.delete(operation)
+      settlement.resolve()
+    }
+    const failOperation = (error: unknown): void => {
+      /* v8 ignore next -- a background rejection and owner teardown may converge on one operation. */
+      if (operationSettled) return
+      operationSettled = true
+      operation.failure = error
+      settlement.resolve()
+    }
+    owner.active.add(operation)
+
+    const admissionSignal = AbortSignal.any([invocation.signal, controller.signal])
+    let executable: string
+    let commandInterpreter: string | undefined
     try {
-      await ctx.subprocess.resolveExecutable('codex', undefined, invocation.signal)
+      executable = await ctx.subprocess.resolveExecutable('codex', undefined, admissionSignal)
+      if (codexNeedsCommandInterpreter(executable)) {
+        commandInterpreter = await ctx.subprocess.resolveExecutable('cmd.exe', undefined, admissionSignal)
+      }
     } catch (error: unknown) {
+      settleOperation()
       if (invocation.signal.aborted) return CANCELLED
+      if (controller.signal.aborted) return { kind: 'error', text: 'Review owner is stopping.' }
       return {
         kind: 'error',
         text: `The reviewer could not resolve the Codex CLI: ${renderThrown(error)}`,
       }
     }
-    if (invocation.signal.aborted) return CANCELLED
-
-    const owner = ensureOwner(owners, invocation.agent)
-    /* v8 ignore next -- teardown unregisters the command; this guard only closes an in-flight dispatch race. */
-    if (owner.stopping) return { kind: 'error', text: 'Review owner is stopping.' }
-    const commandId = invocation.commandId
-    const controller = new AbortController()
-    const settlement = Promise.withResolvers<void>()
-    const operation: ReviewOperation = { controller, settled: settlement.promise }
-    const settleOperation = (): void => {
-      owner.active.delete(operation)
-      settlement.resolve()
+    if (invocation.signal.aborted) {
+      settleOperation()
+      return CANCELLED
     }
-    owner.active.add(operation)
+    if (controller.signal.aborted) {
+      settleOperation()
+      return { kind: 'error', text: 'Review owner is stopping.' }
+    }
+
+    const commandId = invocation.commandId
+    const launch = codexReviewLaunch({
+      model: resolved.model,
+      thinkingEffort: resolved.thinkingEffort,
+      sandbox: resolved.sandbox,
+    }, executable, commandInterpreter)
+    const argv = launch.argv
+    const cwd = invocation.agent.session.header.cwd ?? process.cwd()
     let start: SessionEvent<'review/start'>
     try {
+      // The durable review lifecycle owns settlement from this point. Commit
+      // immediately before its first append so a browser disconnect cannot
+      // race the admitted background run into an error command/done.
+      invocation.commit()
       start = appendReviewEvent(invocation.agent.session, 'review/start', {
         commandId,
         focus: invocation.rawInput.trim(),
+        request: {
+          prompt, argv, cwd, timeoutMs: resolved.timeoutMs,
+          ...launch.env === undefined ? {} : { env: launch.env },
+        },
       })
     } catch (error: unknown) {
       settleOperation()
       throw error
     }
+    const reviewDeadline = deadline(controller.signal, resolved.timeoutMs, REVIEW_TIMEOUT)
     let handle: SubprocessHandle
     try {
       handle = ctx.subprocess.spawn({
-        argv: codexReviewArgv({
-          model: resolved.model,
-          thinkingEffort: resolved.thinkingEffort,
-          sandbox: resolved.sandbox,
-        }),
-        cwd: invocation.agent.session.header.cwd ?? process.cwd(),
+        argv,
+        cwd,
         stdio: {
           stdin: { data: prompt },
           stdout: 'pipe',
           stderr: { maxBytes: STDERR_TAIL_BYTES },
         },
         graceMs: resolved.terminateGraceMs,
-        signal: controller.signal,
+        signal: reviewDeadline.signal,
+        ...launch.env === undefined ? {} : { env: launch.env },
       })
     } catch (error: unknown) {
+      reviewDeadline[Symbol.dispose]()
       const text = `The review could not start: ${renderThrown(error)}`
       try {
         appendReviewEvent(invocation.agent.session, 'review/end', {
@@ -396,17 +527,29 @@ export function apply(ctx: Context, config: Config): void {
       return { kind: 'success', sourceEventSeq: start.seq }
     }
 
-    const settled = runReview(ctx, handle, invocation.agent.session, commandId, resolved, controller.signal)
-    // The process deliberately uses this owner controller rather than the
-    // browser Remote signal. It can only be triggered by agent/plugin teardown.
-    void settled.then(settleOperation, settleOperation)
+    const settled = runReview(
+      ctx, handle, invocation.agent.session, commandId, resolved, reviewDeadline.signal,
+    ).finally(() => { reviewDeadline[Symbol.dispose]() })
+    // The admitted process follows its elapsed deadline and Agent owner, not
+    // the browser Remote signal.
+    void settled.then(settleOperation, (error: unknown) => {
+      ctx.logger.warn(`command-reviewer: background review failed before process-tree exit: ${renderThrown(error)}`)
+      failOperation(error)
+    })
     return { kind: 'success', sourceEventSeq: start.seq }
   }
 
   ctx.effect(function* () {
     yield async () => {
       const cleanups = [...owners.values()].map(owner => Promise.resolve(owner.cleanup()))
-      await Promise.allSettled(cleanups)
+      const results = await Promise.allSettled(cleanups)
+      const failures: unknown[] = []
+      for (const result of results) {
+        if (result.status === 'rejected') failures.push(result.reason as unknown)
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, 'command-reviewer: subprocess cleanup failed before quiescence')
+      }
       owners.clear()
     }
     yield ctx.commands.register({

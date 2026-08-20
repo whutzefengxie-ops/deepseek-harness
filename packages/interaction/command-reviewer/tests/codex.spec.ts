@@ -1,7 +1,12 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import {
-  buildReviewPrompt, codexReviewArgv, parseCodexJsonLine, renderTranscript, TRANSCRIPT_PLACEHOLDER,
+  buildReviewPrompt, codexNeedsCommandInterpreter, codexReviewLaunch, parseCodexJsonLine, renderTranscript,
+  CODEX_BATCH_EXECUTABLE_ENV, TRANSCRIPT_PLACEHOLDER,
 } from '../src/codex.ts'
 
 const PROMPT = 'Review the agent conversation.\n\nTranscript:\n{transcript}'
@@ -24,48 +29,87 @@ function message(
   role: Message['role'],
   content: Message['content'],
   id = `m-${content[0]?.type ?? 'empty'}`,
+  source: Message['source'] = { kind: 'user' },
 ): Message {
   return {
     id,
     role,
     content,
-    source: { kind: 'user' },
+    source,
   } as Message
 }
 
-describe('codexReviewArgv', () => {
+describe('codexReviewLaunch', () => {
   it('builds the fixed exec flags with the configured model', () => {
-    expect(codexReviewArgv({ model: 'gpt-5.1-codex-mini', thinkingEffort: 'high', sandbox: 'read-only' }, 'linux')).toEqual([
-      'codex', 'exec', '--json',
-      '--color', 'never',
-      '--ephemeral',
-      '--skip-git-repo-check',
-      '-s', 'read-only',
-      '-m', 'gpt-5.1-codex-mini',
+    expect(codexReviewLaunch(
+      { model: 'gpt-5.1-codex-mini', thinkingEffort: 'high', sandbox: 'read-only' },
+      '/opt/codex/bin/codex',
+    )).toEqual({ argv: [
+      '/opt/codex/bin/codex', 'exec', '--json', '--color', 'never', '--ephemeral',
+      '--skip-git-repo-check', '-s', 'read-only', '-m', 'gpt-5.1-codex-mini',
       '-c', 'model_reasoning_effort=high',
-    ])
+    ] })
   })
 
   it('omits the model flag when none is configured', () => {
-    expect(codexReviewArgv({ model: '', thinkingEffort: 'low', sandbox: 'workspace-write' }, 'darwin')).toEqual([
-      'codex', 'exec', '--json',
+    expect(codexReviewLaunch(
+      { model: '', thinkingEffort: 'low', sandbox: 'workspace-write' },
+      '/usr/local/bin/codex',
+    )).toEqual({ argv: [
+      '/usr/local/bin/codex', 'exec', '--json',
       '--color', 'never',
       '--ephemeral',
       '--skip-git-repo-check',
       '-s', 'workspace-write',
       '-c', 'model_reasoning_effort=low',
-    ])
+    ] })
   })
 
-  it('wraps the command in cmd.exe on Windows', () => {
-    expect(codexReviewArgv({ model: '', thinkingEffort: 'medium', sandbox: 'read-only' }, 'win32')).toEqual([
-      'cmd.exe', '/d', '/s', '/c', 'codex', 'exec', '--json',
-      '--color', 'never',
-      '--ephemeral',
-      '--skip-git-repo-check',
-      '-s', 'read-only',
-      '-c', 'model_reasoning_effort=medium',
-    ])
+  it('uses provider-resolved paths for a Windows batch wrapper and its interpreter', () => {
+    expect(codexReviewLaunch(
+      { model: '', thinkingEffort: 'medium', sandbox: 'read-only' },
+      String.raw`C:\sandbox\bin\codex.cmd`,
+      String.raw`C:\Windows\System32\cmd.exe`,
+    )).toEqual({
+      argv: [
+        String.raw`C:\Windows\System32\cmd.exe`, '/d', '/q', '/v:off', '/s', '/c',
+        `%${CODEX_BATCH_EXECUTABLE_ENV}% exec --json --color never --ephemeral --skip-git-repo-check -s read-only -c model_reasoning_effort=medium`,
+      ],
+      env: { [CODEX_BATCH_EXECUTABLE_ENV]: String.raw`"C:\sandbox\bin\codex.cmd"` },
+    })
+  })
+
+  it.skipIf(process.platform !== 'win32')('executes a Windows batch wrapper whose path contains spaces and cmd metacharacters', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-reviewer-batch-'))
+    try {
+      const bin = join(root, 'space & percent%PATH% bang! caret^ paren()')
+      mkdirSync(bin)
+      const executable = join(bin, 'codex wrapper.cmd')
+      writeFileSync(executable, '@echo off\r\necho REVIEWER_BATCH_OK %*\r\n')
+      const interpreter = process.env.ComSpec
+      if (interpreter === undefined) throw new Error('ComSpec is unavailable')
+      const launch = codexReviewLaunch(
+        { model: '', thinkingEffort: 'medium', sandbox: 'read-only' },
+        executable,
+        interpreter,
+      )
+
+      const [program, ...args] = launch.argv
+      if (program === undefined) throw new Error('review launch has no executable')
+      const result = spawnSync(program, args, {
+        cwd: root,
+        encoding: 'utf8',
+        env: { ...process.env, ...launch.env },
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('REVIEWER_BATCH_OK exec --json')
+      expect(result.stdout).toContain('-c model_reasoning_effort=medium')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.each([
@@ -74,15 +118,24 @@ describe('codexReviewArgv', () => {
     'gpt-5.1-codex-mini%PATH%',
     'gpt-5.1-codex-mini with-space',
   ])('rejects model text that could become shell syntax on Windows: %s', (model) => {
-    expect(() => codexReviewArgv({ model, thinkingEffort: 'medium', sandbox: 'read-only' }, 'win32'))
+    expect(() => codexReviewLaunch({ model, thinkingEffort: 'medium', sandbox: 'read-only' }, '/bin/codex'))
       .toThrow('portable model identifier')
   })
 
   it('passes every sandbox mode through verbatim', () => {
     for (const sandbox of ['read-only', 'workspace-write', 'danger-full-access'] as const) {
-      expect(codexReviewArgv({ model: '', thinkingEffort: 'medium', sandbox }, 'linux'))
+      expect(codexReviewLaunch({ model: '', thinkingEffort: 'medium', sandbox }, '/bin/codex').argv)
         .toContain(sandbox)
     }
+  })
+
+  it.each([
+    [String.raw`C:\tools\codex.cmd`, true],
+    [String.raw`C:\tools\CODEX.BAT`, true],
+    ['/workspace/bin/codex', false],
+    ['/workspace/bin/codex.exe', false],
+  ] as const)('detects batch wrappers from the resolved path %s', (executable, expected) => {
+    expect(codexNeedsCommandInterpreter(executable)).toBe(expected)
   })
 })
 
@@ -305,6 +358,35 @@ describe('renderTranscript', () => {
         { type: 'text', text: 'also kept' },
       ], 'u'),
     ], 1_000)).toBe('Agent: kept\nUser: also kept')
+  })
+
+  it('omits request-configuration context but keeps other contextual evidence', () => {
+    expect(renderTranscript([
+      message('user', [{ type: 'text', text: 'workspace rules' }], 'instructions', {
+        kind: 'plugin', plugin: 'instructions', form: 'instructions',
+      }),
+      message('user', [{ type: 'text', text: 'available skills' }], 'catalog', {
+        kind: 'plugin', plugin: 'skills', form: 'catalog',
+      }),
+      message('user', [{ type: 'text', text: 'runtime policy' }], 'snapshot', {
+        kind: 'plugin', plugin: 'runtime', form: 'snapshot', sections: [],
+      }),
+      message('user', [{ type: 'text', text: 'plan updated' }], 'notice', {
+        kind: 'plugin', plugin: 'plan', form: 'notice', summary: 'plan updated',
+      }),
+      message('user', [{ type: 'text', text: 'recalled evidence' }], 'recall', {
+        kind: 'plugin', plugin: 'recall', form: 'recall',
+      }),
+      message('user', [{ type: 'text', text: 'compacted conversation' }], 'summary', {
+        kind: 'plugin', plugin: 'compaction',
+      }),
+      message('user', [{ type: 'text', text: 'direct request' }]),
+    ], 1_000)).toBe([
+      'User: plan updated',
+      'User: recalled evidence',
+      'User: compacted conversation',
+      'User: direct request',
+    ].join('\n'))
   })
 
   it('falls through unknown future block types without failing', () => {

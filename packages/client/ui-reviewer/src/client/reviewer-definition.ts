@@ -14,7 +14,7 @@ export interface ReviewerActivity {
 /** Durable review lifecycle state consumed by the keyed Chat renderer. */
 export interface ReviewerChatData {
   readonly focus: string
-  readonly status: 'running' | 'completed' | 'failed' | 'cancelled'
+  readonly status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
   readonly activities: readonly ReviewerActivity[]
   readonly text?: string
 }
@@ -29,6 +29,7 @@ function statusFromEnd(end: ReviewEndData['outcome']): ReviewerChatData['status'
     case 'completed': return 'completed'
     case 'failed': return 'failed'
     case 'cancelled': return 'cancelled'
+    case 'interrupted': return 'interrupted'
     /* v8 ignore next -- ReviewOutcome is closed and every variant is handled above. */
     default: return end satisfies never
   }

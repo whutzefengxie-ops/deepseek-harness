@@ -139,6 +139,93 @@ function orderedVisible(nodes: readonly ChatConversationViewNode[]): ChatConvers
     .sort((left, right) => left.anchorSeq - right.anchorSeq || left.key.localeCompare(right.key))
 }
 
+function commandSourceSeq(node: ChatConversationViewNode): number | undefined {
+  const candidate = node as ChatNode
+  if (candidate.kind !== 'command') return undefined
+  const outcome = candidate.data.outcome
+  return outcome?.kind === 'success' ? outcome.sourceEventSeq : undefined
+}
+
+function domainAnchor(node: ChatConversationViewNode): number | undefined {
+  return node.kind !== 'command' && node.visibility === 'visible' ? node.anchorSeq : undefined
+}
+
+function addIndexed(index: Map<number, Set<string>>, anchor: number, key: string): void {
+  const keys = index.get(anchor) ?? new Set<string>()
+  keys.add(key)
+  index.set(anchor, keys)
+}
+
+function removeIndexed(index: Map<number, Set<string>>, anchor: number, key: string): void {
+  const keys = index.get(anchor)
+  if (keys === undefined) return
+  keys.delete(key)
+  if (keys.size === 0) index.delete(anchor)
+}
+
+/** Incrementally hides generic command rows claimed by visible domain nodes. */
+class CommandPresentationProjector {
+  private readonly domains = new Map<number, Set<string>>()
+  private readonly commands = new Map<number, Set<string>>()
+
+  replace(nodes: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
+    this.domains.clear()
+    this.commands.clear()
+    for (const node of nodes) this.add(node)
+    return nodes.map(node => this.reconcile(node))
+  }
+
+  apply(
+    upserts: readonly ChatConversationViewNode[],
+    store: ChatNodeStore,
+  ): readonly ChatConversationViewNode[] {
+    const byKey = new Map(upserts.map(node => [node.key, node]))
+    const affectedAnchors = new Set<number>()
+    const affectedCommands = new Set<string>()
+    for (const node of upserts) {
+      const previous = store.get(node.key)
+      if (previous !== undefined) {
+        const previousDomain = domainAnchor(previous)
+        if (previousDomain !== undefined) {
+          removeIndexed(this.domains, previousDomain, previous.key)
+          affectedAnchors.add(previousDomain)
+        }
+        const previousSource = commandSourceSeq(previous)
+        if (previousSource !== undefined) {
+          removeIndexed(this.commands, previousSource, previous.key)
+          affectedCommands.add(previous.key)
+        }
+      }
+      this.add(node)
+      const nextDomain = domainAnchor(node)
+      if (nextDomain !== undefined) affectedAnchors.add(nextDomain)
+      if (commandSourceSeq(node) !== undefined) affectedCommands.add(node.key)
+    }
+    for (const anchor of affectedAnchors) {
+      for (const key of this.commands.get(anchor) ?? EMPTY_KEYS) affectedCommands.add(key)
+    }
+    for (const key of affectedCommands) {
+      const node = byKey.get(key) ?? store.get(key)
+      if (node !== undefined) byKey.set(key, this.reconcile(node))
+    }
+    return [...byKey.values()]
+  }
+
+  private add(node: ChatConversationViewNode): void {
+    const anchor = domainAnchor(node)
+    if (anchor !== undefined) addIndexed(this.domains, anchor, node.key)
+    const source = commandSourceSeq(node)
+    if (source !== undefined) addIndexed(this.commands, source, node.key)
+  }
+
+  private reconcile(node: ChatConversationViewNode): ChatConversationViewNode {
+    const sourceSeq = commandSourceSeq(node)
+    if (sourceSeq === undefined) return node
+    const visibility = this.domains.has(sourceSeq) ? 'hidden' : 'visible'
+    return node.visibility === visibility ? node : { ...node, visibility }
+  }
+}
+
 function referenceMessageSeq(node: ChatConversationViewNode): number | undefined {
   const candidate = node as ChatNode
   return candidate.kind === 'user' || candidate.kind === 'steering'
@@ -479,6 +566,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
   private readonly locations = new MutableChatLocationIndex()
   private readonly legacy = new LegacySliceBuilder()
   private readonly referenceLabels = new ReferenceLabelProjector()
+  private readonly commandPresentation = new CommandPresentationProjector()
   private order: readonly string[] = EMPTY_KEYS
   readonly empty: ChatSnapshot
 
@@ -490,7 +578,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     readonly nodes: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
-    const nodes = this.referenceLabels.replace(input.nodes)
+    const nodes = this.commandPresentation.replace(this.referenceLabels.replace(input.nodes))
     this.store.replace(nodes)
     this.order = orderedVisible(nodes).map(node => node.key)
     this.locations.rebuild(this.order, this.store)
@@ -501,7 +589,8 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     readonly upserts: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
-    const upserts = this.referenceLabels.apply(input.upserts, this.store)
+    const labelled = this.referenceLabels.apply(input.upserts, this.store)
+    const upserts = this.commandPresentation.apply(labelled, this.store)
     let structural = false
     const contentOnly: ChatConversationViewNode[] = []
     for (const node of upserts) {

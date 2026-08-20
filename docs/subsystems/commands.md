@@ -52,7 +52,7 @@ interface CommandDefinition {
 
 ## Invocation and result
 
-The adapter owns cancellation and passes the exact target agent. `rawInput` begins immediately after the parsed name and retains the adapter-delivered separator and suffix. Results are direct UI outcomes, not tool results or session events.
+The adapter owns cancellation and passes the exact target agent. `rawInput` begins immediately after the parsed name and retains the adapter-delivered separator and suffix. A handler calls `commit()` immediately before an irrevocable domain mutation transfers settlement ownership away from the UI request. Results are direct UI outcomes, not tool results or session events.
 
 ```ts type-equiv
 /** Invocation passed to one registered command handler. */
@@ -73,6 +73,14 @@ interface CommandInvocation {
   readonly attachments: readonly ImageBlock[]
   /** Cancellation signal owned by the dispatching UI request. */
   readonly signal: AbortSignal
+  /**
+   * Transfer settlement ownership from the UI request to the handler before
+   * publishing an irrevocable domain mutation. The call throws when the
+   * request is already aborted. Once committed, later request cancellation no
+   * longer rejects command dispatch; the handler must settle its own result
+   * and own any detached work it admitted.
+   */
+  readonly commit: () => void
 }
 ```
 
@@ -184,7 +192,7 @@ find(agent: Agent, name: string): CommandDefinition | undefined
 
 Types: [Agent](core.md) · [EncodedImageAttachment](attachment.md)
 
-Source: [`packages/interaction/commands/src/index.ts:250`](../../packages/interaction/commands/src/index.ts)
+Source: [`packages/interaction/commands/src/index.ts:259`](../../packages/interaction/commands/src/index.ts)
 
 <a id="commands-events"></a>
 
