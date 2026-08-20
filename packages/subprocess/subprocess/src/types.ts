@@ -80,6 +80,14 @@ export interface SubprocessSpawnSpec {
   /** Per-stream stdio dispositions. */
   stdio: SubprocessStdio
   /**
+   * Required behavior when the provider Host exits without disposing the
+   * handle. `'terminate'` requires the provider to prevent the process tree
+   * from retaining execution ability and to reject before launch when it
+   * cannot provide that guarantee. `'allow'` permits provider-specific
+   * survivors; ordinary handle termination and service disposal still apply.
+   */
+  hostDeath: 'allow' | 'terminate'
+  /**
    * Positive finite grace period in milliseconds, no greater than
    * `MAX_TIMER_DELAY_MS`, for the {@link SubprocessHandle.terminate} escalation
    * and for draining still-open collected pipes after the process exits (an
@@ -159,10 +167,9 @@ export interface SubprocessCollectedOutputs {
  * A live child process rooted in its own process tree. Collected output
  * remains readable after exit; piped streams belong to the caller.
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * Termination and exit observation are tree-scoped: `terminate()` targets the
+ * provider-owned tree, and `waitForExit()` does not confirm quiescence while
+ * an observable member can still execute.
  */
 export interface SubprocessHandle {
   /** Process id (tree root); -1 when the spawn itself failed. */
@@ -189,6 +196,7 @@ export interface SubprocessHandle {
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.
    * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @throws when the provider cannot determine whole-tree liveness.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }

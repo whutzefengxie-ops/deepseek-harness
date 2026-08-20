@@ -67,6 +67,7 @@ return (ctx) => {
         prompt: 'Inspect the Python SDK event projection.',
         argv: ['/snapshot/codex', 'exec', '--json'],
         cwd: '/snapshot/workspace',
+        hostDeath: 'terminate',
         timeoutMs: 1800000
       }
     })

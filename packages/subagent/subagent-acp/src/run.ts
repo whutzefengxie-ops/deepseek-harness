@@ -210,6 +210,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     argv: [spec.command, ...spec.args],
     cwd: spec.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+    hostDeath: 'allow',
     graceMs: spec.disposeGraceMs,
     env: spec.env,
   })

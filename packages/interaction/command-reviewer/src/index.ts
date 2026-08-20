@@ -525,7 +525,7 @@ export function apply(ctx: Context, config: Config): void {
         commandId,
         focus: invocation.rawInput.trim(),
         request: {
-          prompt, argv, cwd, timeoutMs: resolved.timeoutMs,
+          prompt, argv, cwd, hostDeath: 'terminate', timeoutMs: resolved.timeoutMs,
           ...launch.env === undefined ? {} : { env: launch.env },
         },
       })
@@ -576,6 +576,7 @@ export function apply(ctx: Context, config: Config): void {
           stdout: 'pipe',
           stderr: { maxBytes: STDERR_TAIL_BYTES },
         },
+        hostDeath: 'terminate',
         graceMs: resolved.terminateGraceMs,
         signal: reviewDeadline.signal,
         ...launch.env === undefined ? {} : { env: launch.env },

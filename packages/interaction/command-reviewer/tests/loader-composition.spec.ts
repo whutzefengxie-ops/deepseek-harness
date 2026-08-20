@@ -140,6 +140,7 @@ describe('command-reviewer real Loader composition', () => {
       prompt: spec.stdio.stdin.data,
       argv: spec.argv,
       cwd: root,
+      hostDeath: 'terminate',
       timeoutMs: 3_600_000,
     })
 

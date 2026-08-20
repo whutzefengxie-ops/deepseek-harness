@@ -25,6 +25,7 @@ export function apply(ctx: Context): void {
         prompt: 'Inspect the SDK event projection.',
         argv: ['/snapshot/codex', 'exec', '--json'],
         cwd: '/snapshot/workspace',
+        hostDeath: 'terminate',
         timeoutMs: 1_800_000,
       },
     })

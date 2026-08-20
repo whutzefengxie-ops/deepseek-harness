@@ -577,7 +577,7 @@ Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/
 'review/activity': ReviewActivityData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:72`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:74`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewend--log-only"></a>
 
@@ -591,7 +591,7 @@ Source: [`packages/interaction/command-reviewer/src/types.ts:72`](../packages/in
 'review/end': ReviewEndData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:77`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:79`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewstart--log-only"></a>
 
@@ -605,7 +605,7 @@ Source: [`packages/interaction/command-reviewer/src/types.ts:77`](../packages/in
 'review/start': ReviewStartData
 ```
 
-Source: [`packages/interaction/command-reviewer/src/types.ts:67`](../packages/interaction/command-reviewer/src/types.ts)
+Source: [`packages/interaction/command-reviewer/src/types.ts:69`](../packages/interaction/command-reviewer/src/types.ts)
 
 ### `sandbox/*`
 

@@ -40,6 +40,7 @@ if (kind === 'ordinary') {
       stdout: { maxBytes: 1024 },
       stderr: { maxBytes: 1024 },
     },
+    hostDeath: 'terminate',
     graceMs: trigger === 'dispose' ? 100 : 30_000,
   })
 } else {

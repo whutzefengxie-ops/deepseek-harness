@@ -177,6 +177,25 @@ describe('synchronous cleanup on host exit', () => {
 })
 
 describe('parent-death guardian command transport', () => {
+  it('reports guardian allocation failures through the handle', async () => {
+    const missingCwd = await mkdtemp(join(tmpdir(), 'dsh-subprocess-missing-cwd-'))
+    await rm(missingCwd, { recursive: true, force: true })
+    const handle = spawnSubprocess({
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+      cwd: missingCwd,
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 1_024 },
+        stderr: { maxBytes: 1_024 },
+      },
+      hostDeath: 'terminate',
+      graceMs: 100,
+    })
+
+    await expect(handle.done).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
   it('preserves batch stdin, stdout, and the target exit code', async () => {
     const handle = spawnSubprocess({
       argv: [process.execPath, '-e', 'const fs=require("node:fs");let text="";process.stdin.on("data",chunk=>{text+=chunk});process.stdin.on("end",()=>{fs.writeSync(1,text);process.exit(19)})'],
@@ -186,6 +205,7 @@ describe('parent-death guardian command transport', () => {
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       },
+      hostDeath: 'terminate',
       graceMs: 100,
     })
 
@@ -205,10 +225,59 @@ describe('parent-death guardian command transport', () => {
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       },
+      hostDeath: 'terminate',
       graceMs: 100,
     })
 
     await expect(handle.done).rejects.toMatchObject({ code: 'ENOENT', path: missing })
     await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+})
+
+describe.skipIf(process.platform !== 'win32')('Windows guardian Job ownership', () => {
+  it('retains and terminates descendants after the requested command exits normally', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-subprocess-windows-job-'))
+    const pidFile = join(root, 'descendant.pid')
+    let descendant: number | undefined
+    const handle = spawnSubprocess({
+      argv: [process.execPath, '-e', [
+        'const { spawn } = require("node:child_process")',
+        'const { writeFileSync } = require("node:fs")',
+        'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 60000)"], { detached: true, stdio: "ignore" })',
+        'writeFileSync(process.argv[1], String(child.pid))',
+        'child.unref()',
+      ].join(';'), pidFile],
+      cwd: process.cwd(),
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 1_024 },
+        stderr: { maxBytes: 1_024 },
+      },
+      hostDeath: 'terminate',
+      graceMs: 100,
+    })
+
+    try {
+      descendant = await vi.waitFor(async () => {
+        const pid = Number((await readFile(pidFile, 'utf8')).trim())
+        if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('descendant pid is not ready')
+        return pid
+      }, { interval: 10, timeout: 5_000 })
+      await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+      expect(processExists(descendant)).toBe(true)
+      await expect(handle.waitForExit(AbortSignal.timeout(100))).resolves.toBe(false)
+
+      handle.terminate()
+      await expect(handle.waitForExit()).resolves.toBe(true)
+      await vi.waitFor(() => {
+        if (processExists(descendant!)) throw new Error('descendant remains alive')
+      }, { interval: 25, timeout: 5_000 })
+    } finally {
+      handle.terminate()
+      if (descendant !== undefined && processExists(descendant)) {
+        try { process.kill(descendant, 'SIGKILL') } catch { /* The Job already removed it. */ }
+      }
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

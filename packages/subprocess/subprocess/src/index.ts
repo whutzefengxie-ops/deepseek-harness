@@ -91,6 +91,9 @@ declare module '@deepseek-ai/cordis' {
  *   platform. {@link SubprocessHandle.waitForExit} observes whole-tree
  *   liveness, so a consumer-owned teardown ladder can hold each tier on real
  *   quiescence.
+ * - A spawn whose `hostDeath` is `'terminate'` either starts under a
+ *   provider-owned mechanism that removes the tree's execution ability when
+ *   the Host exits or rejects before the requested command can start.
  * - Disposal of the service terminates all still-running managed processes
  *   and awaits their exit.
  * - {@link spawnTerminal} owns terminal allocation, text transport,

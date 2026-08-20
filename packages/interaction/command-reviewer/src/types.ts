@@ -31,6 +31,8 @@ export interface ReviewRequestData {
   readonly env?: Readonly<Record<string, string>>
   /** Working directory in the subprocess provider's execution world. */
   readonly cwd: string
+  /** Provider guarantee that loss of the Host terminates the admitted process tree. */
+  readonly hostDeath: 'terminate'
   /** Maximum elapsed run time before the process tree is terminated. */
   readonly timeoutMs: number
 }

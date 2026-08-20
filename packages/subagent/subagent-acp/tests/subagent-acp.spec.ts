@@ -117,6 +117,7 @@ describe('child env layering (through the subprocess seam)', () => {
         ],
         cwd: process.cwd(),
         stdio: { stdin: 'ignore', stdout: { maxBytes: 1000 }, stderr: { maxBytes: 1000 } },
+        hostDeath: 'allow',
         graceMs: 1000,
         env: { DEEPSEEK_API_KEY: 'explicit' },
       })
@@ -149,6 +150,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     argv: [process.execPath, '--input-type=module', '--eval', source],
     cwd: process.cwd(),
     stdio: { stdin, stdout: { maxBytes: 1000 }, stderr: { maxBytes: 1000 } },
+    hostDeath: 'allow',
     graceMs: 200,
   })
   const expectHostTermination = (outcome: SubprocessOutcome, posixSignal: NodeJS.Signals): void => {
@@ -191,6 +193,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
       argv: [process.execPath, '--input-type=module', '--eval', ''],
       cwd: '/nonexistent-dir-dsh-acp-ladder-test',
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1000 }, stderr: { maxBytes: 1000 } },
+      hostDeath: 'allow',
       graceMs: 200,
     })
     await expect(disposeAcpChild(child, 1_000)).resolves.toBeUndefined()

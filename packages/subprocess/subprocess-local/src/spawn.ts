@@ -26,6 +26,8 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
 import { PARENT_DEATH_GUARDIAN_SOURCE } from './parent-death-guardian.ts'
+import { createWindowsProcessJob } from './windows-job.ts'
+import type { WindowsProcessJob } from './windows-job.ts'
 
 /**
  * Build a child environment: explicit caller entries override the scrubbed
@@ -57,6 +59,8 @@ export interface SpawnInternals {
   platform?: NodeJS.Platform
   /** Linux process-group member probe (defaults to `/proc` inspection). */
   linuxProcessGroupHasLiveMembers?: (processGroupId: number) => boolean | undefined
+  /** Windows Job Object factory; production uses the koffi-backed implementation. */
+  windowsJobFactory?: () => WindowsProcessJob
 }
 
 /**
@@ -355,23 +359,55 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   const guardParentDeath = internals.platform === undefined
     && packagedProcess.pkg === undefined
     && stdinMode !== 'pipe'
-  const child = spawn(
-    guardParentDeath ? process.execPath : program,
-    guardParentDeath ? ['-e', PARENT_DEATH_GUARDIAN_SOURCE] : args,
-    {
-      cwd: spec.cwd,
-      env,
-      stdio: [
-        guardParentDeath ? 'pipe' : stdinMode === 'ignore' ? 'ignore' : 'pipe',
-        outMode === 'inherit' ? 'inherit' : 'pipe',
-        errMode === 'inherit' ? 'inherit' : 'pipe',
-        ...guardParentDeath ? ['pipe' as const] : [],
-      ],
-      // `detached` gives teardown a tree root on POSIX (its own process group);
-      // Windows terminates by root pid through taskkill /T instead.
-      detached: platform !== 'win32',
-    },
-  )
+  if (spec.hostDeath === 'terminate' && !guardParentDeath) {
+    throw new Error('subprocess-local: host-death termination requires a non-packaged ignore or batch stdin spawn')
+  }
+  const windowsJob = guardParentDeath && platform === 'win32'
+    ? (internals.windowsJobFactory ?? createWindowsProcessJob)()
+    : undefined
+  let child: ChildProcess
+  try {
+    child = spawn(
+      guardParentDeath ? process.execPath : program,
+      guardParentDeath ? ['-e', PARENT_DEATH_GUARDIAN_SOURCE] : args,
+      {
+        cwd: spec.cwd,
+        env,
+        stdio: [
+          guardParentDeath ? 'pipe' : stdinMode === 'ignore' ? 'ignore' : 'pipe',
+          outMode === 'inherit' ? 'inherit' : 'pipe',
+          errMode === 'inherit' ? 'inherit' : 'pipe',
+          ...guardParentDeath ? ['pipe' as const] : [],
+        ],
+        // `detached` gives teardown a tree root on POSIX (its own process group);
+        // Windows keeps the guardian and descendants in a kill-on-close Job.
+        detached: platform !== 'win32',
+      },
+    )
+  } catch (error: unknown) {
+    windowsJob?.close()
+    throw error
+  }
+
+  // The guardian cannot launch the target before the Host assigns it to the
+  // Job: the launch record is written only after this succeeds. Descendants
+  // then inherit membership, including children left after the target exits.
+  const pid = child.pid ?? -1
+  if (windowsJob !== undefined) {
+    if (pid <= 0) {
+      // Node reports guardian allocation failures through the ChildProcess
+      // error event; no process exists to assign or retain in the Job.
+      windowsJob.close()
+    } else {
+      try {
+        windowsJob.assign(pid)
+      } catch (error: unknown) {
+        try { child.kill('SIGKILL') } catch { /* The waiting guardian already exited. */ }
+        windowsJob.close()
+        throw error
+      }
+    }
+  }
 
   let targetSpawnFailure: Error | undefined
   let targetSpawnStatus = Promise.resolve()
@@ -434,18 +470,26 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   let graceTimer: ReturnType<typeof setTimeout> | undefined
   let treeExitObserved = false
   let treeExitObservation: Promise<void> | undefined
+  let treeLifecycleFailure: Error | undefined
   let settled = false
 
-  // Failed spawns use pid -1 so signalling remains a no-op.
-  const pid = child.pid ?? -1
+  const failTreeLifecycle = (error: unknown): void => {
+    if (treeLifecycleFailure !== undefined) return
+    treeLifecycleFailure = error instanceof Error ? error : new Error(String(error))
+    // Kill-on-close is the last reliable containment when a Job API cannot
+    // confirm or request quiescence; the awaited observer still reports the failure.
+    windowsJob?.close()
+  }
 
   /** Whether the detached tree's root (or POSIX group) is still alive. */
   const treeAlive = (): boolean => {
     /* v8 ignore next -- only a timer callback already queued when the observer settles can enter here;
        the guard is the final defense against probing an id after its tree was confirmed absent. */
     if (treeExitObserved) return false
+    if (treeLifecycleFailure !== undefined) throw treeLifecycleFailure
     if (pid <= 0) return false
     if (platform === 'win32') {
+      if (windowsJob !== undefined) return windowsJob.hasActiveProcesses()
       // Windows has no group-liveness probe; the direct child's exit is the
       // observable boundary (taskkill /T already took the tree with it).
       return child.exitCode === null && child.signalCode === null
@@ -480,6 +524,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     treeExitObservation ??= (async () => {
       while (treeAlive()) await sleepTick()
       treeExitObserved = true
+      windowsJob?.close()
       if (graceTimer !== undefined) clearTimeout(graceTimer)
       graceTimer = undefined
     })()
@@ -495,22 +540,36 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     /* v8 ignore next -- the shared exit observer cancels the ordinary dead-tree timer;
        this remains the timer/death race guard and cannot be staged deterministically. */
     if (!treeAlive()) return
-    signalTree(platform, pid, sig, child, taskkill)
+    if (windowsJob !== undefined) windowsJob.terminate()
+    else signalTree(platform, pid, sig, child, taskkill)
   }
 
   const terminate = (): void => {
     if (treeExitObserved || graceTimer !== undefined) return
     // Observe from the first termination tier onward, even when inherited
     // pipes delay `done` and no consumer has begun its own teardown wait.
-    void observeTreeExit()
-    if (!treeAlive()) return
-    kill('SIGTERM')
+    void observeTreeExit().catch(() => {
+      // waitForExit() and service disposal own the observable failure.
+    })
+    try {
+      if (!treeAlive()) return
+      kill('SIGTERM')
+    } catch (error: unknown) {
+      failTreeLifecycle(error)
+      return
+    }
     // The escalation must survive direct-child settlement — the leader dying
     // does not mean the tree died — so settle does not clear this timer, and
     // kill() re-probes tree liveness before force-killing. It stays ref'd:
     // the pending SIGKILL is a commitment, and a parent exiting before it
     // fires would orphan a trapped survivor. Self-bounds at graceMs.
-    graceTimer = setTimeout(() => { kill('SIGKILL') }, spec.graceMs)
+    graceTimer = setTimeout(() => {
+      try {
+        kill('SIGKILL')
+      } catch (error: unknown) {
+        failTreeLifecycle(error)
+      }
+    }, spec.graceMs)
   }
 
   const terminateForHostExit = (): void => {

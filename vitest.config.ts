@@ -61,6 +61,7 @@ const windowsOnlyCoverageExclusions = process.platform !== 'win32'
       // executes only on win32; its decision logic is unit-pinned on every
       // host through the injected-internals suites.
       'packages/subprocess/subprocess-local/src/windows-inspector.ts',
+      'packages/subprocess/subprocess-local/src/windows-job.ts',
     ]
   : []
 

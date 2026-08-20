@@ -88,7 +88,7 @@ interface SubprocessStdio {
 
 ## 完全显式的 spawn spec
 
-该 seam 不应用任何默认值：每项处置方式、限制与目录都在 spec 上显式给出，因此由调用方自己的配置决定它们，而不是由某个隐藏的子进程服务默认值决定。`argv` 绝不经过 shell 解释。
+该 seam 不应用任何默认值：每项处置方式、限制、目录与宿主死亡要求都在 spec 上显式给出，因此由调用方自己的配置决定它们，而不是由某个隐藏的子进程服务默认值决定。`hostDeath: 'terminate'` 要求提供方阻止进程树在自身宿主退出后继续执行；无法提供该保证时，必须在请求命令启动前拒绝。`'allow'` 接受提供方特有的后代存活行为。`argv` 绝不经过 shell 解释。
 
 ```ts type-equiv
 /**
@@ -104,6 +104,14 @@ interface SubprocessSpawnSpec {
   cwd: string
   /** Per-stream stdio dispositions. */
   stdio: SubprocessStdio
+  /**
+   * Required behavior when the provider Host exits without disposing the
+   * handle. `'terminate'` requires the provider to prevent the process tree
+   * from retaining execution ability and to reject before launch when it
+   * cannot provide that guarantee. `'allow'` permits provider-specific
+   * survivors; ordinary handle termination and service disposal still apply.
+   */
+  hostDeath: 'allow' | 'terminate'
   /**
    * Positive finite grace period in milliseconds, no greater than
    * `MAX_TIMER_DELAY_MS`, for the {@link SubprocessHandle.terminate} escalation
@@ -138,10 +146,9 @@ spawn 会立即返回一个活动句柄。收集模式的读取器接受全流�
  * A live child process rooted in its own process tree. Collected output
  * remains readable after exit; piped streams belong to the caller.
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * Termination and exit observation are tree-scoped: `terminate()` targets the
+ * provider-owned tree, and `waitForExit()` does not confirm quiescence while
+ * an observable member can still execute.
  */
 interface SubprocessHandle {
   /** Process id (tree root); -1 when the spawn itself failed. */
@@ -168,6 +175,7 @@ interface SubprocessHandle {
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.
    * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @throws when the provider cannot determine whole-tree liveness.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }
@@ -285,6 +293,7 @@ Implementations must honor these semantics:
 - spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.
 - Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another's output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.
 - SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.
+- A spawn whose `hostDeath` is `'terminate'` either starts under a provider-owned mechanism that removes the tree's execution ability when the Host exits or rejects before the requested command can start.
 - Disposal of the service terminates all still-running managed processes and awaits their exit.
 - spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.
 
@@ -320,5 +329,5 @@ abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
-Source: [`packages/subprocess/subprocess/src/index.ts:102`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/index.ts:105`](../../packages/subprocess/subprocess/src/index.ts)
 <!-- END GENERATED cordis-surface -->

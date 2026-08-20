@@ -12,6 +12,7 @@ const REQUEST = {
   prompt: 'Review this transcript.',
   argv: ['/resolved/codex', 'exec', '--json'],
   cwd: '/workspace',
+  hostDeath: 'terminate',
   timeoutMs: 1_800_000,
 } as const
 
@@ -141,6 +142,8 @@ describe('command-reviewer durable invariant', () => {
     [{ ...REQUEST, env: { '': 'value' } }, /env must contain non-empty keys with string values/],
     [{ ...REQUEST, env: { DSH_CODEX_REVIEWER_EXECUTABLE: 1 } }, /env must contain non-empty keys with string values/],
     [{ ...REQUEST, cwd: '' }, /cwd must be a non-empty string/],
+    [{ prompt: REQUEST.prompt, argv: REQUEST.argv, cwd: REQUEST.cwd, timeoutMs: REQUEST.timeoutMs }, /hostDeath must be terminate/],
+    [{ ...REQUEST, hostDeath: 'allow' }, /hostDeath must be terminate/],
     [{ ...REQUEST, timeoutMs: 0 }, /timeoutMs must be a positive safe integer/],
     [{ ...REQUEST, timeoutMs: 1.5 }, /timeoutMs must be a positive safe integer/],
   ] as const)('rejects an invalid persisted request %#', async (value, pattern) => {

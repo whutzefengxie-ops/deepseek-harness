@@ -54,6 +54,7 @@ export function claudeSpawnSpec(
     argv: [options.command, ...options.args],
     cwd: options.cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+    hostDeath: 'allow',
     graceMs,
     signal: options.signal,
     env: sdkEnvironmentOverlay(options.env),

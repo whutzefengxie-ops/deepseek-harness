@@ -6,15 +6,15 @@
 
 ## 行为
 
-- **以适合平台的方式发送信号的 detached 进程树**：POSIX 子进程使用 `detached` spawn（拥有独立进程组），信号以负 pgid 发送并以直接子进程作为回退；Windows 通过 `taskkill /PID <pid> /T /F` 终止进程树。`terminate()`（句柄唯一的终止操作）先发送 SIGTERM，经过 spec 的宽限期后再发送 SIGKILL（沿用 OpenCode 的升级策略；流水线与子 shell 会随父进程一起结束），进程树消亡后为空操作；`waitForExit()` 轮询整棵进程树的存活状态，使消费方的拆卸能确认真正的完全停稳。组长进程退出后，仍然打开的管道也只获得同样有界的排空宽限期，因此存活的后代进程无法无限期地拖住结果不结算。系统会容忍 ESRCH；重新指定父进程并脱离该组的 daemon 仍可能存活。
-- **非交互命令的父进程死亡 guardian**：stdin 为 `ignore` 或完整批量输入的普通 spawn 会使用一个私有 Node guardian 作为受管进程树根。宿主保持 guardian 的控制 stdin 打开；意外 EOF 会让它对 POSIX 进程组发送 SIGKILL，或在 Windows 对实际命令树运行 `taskkill /T /F`。guardian 会转发批量 stdin、stdout、stderr、退出状态与实际命令的 spawn 失败。这样可以覆盖宿主 `SIGKILL`、native crash，以及其他无法执行提供方 JavaScript 清理的故障。由调用方持有原始 stdin 管道的运行与打包单文件运行时仍直接 spawn。
+- **以适合平台的方式发送信号的 detached 进程树**：POSIX 子进程使用 `detached` spawn（拥有独立进程组），信号以负 pgid 发送并以直接子进程作为回退；受 guardian 保护的 Windows 命令使用 Job Object，直接形式则通过 `taskkill /PID <pid> /T /F` 终止。`terminate()`（句柄唯一的终止操作）先发送 SIGTERM，经过 spec 的宽限期后再发送 SIGKILL（沿用 OpenCode 的升级策略；流水线与子 shell 会随父进程一起结束），进程树消亡后为空操作；`waitForExit()` 轮询整棵进程树或 Job 成员，使消费方的拆卸能确认真正的完全停稳。组长进程退出后，仍然打开的管道也只获得同样有界的排空宽限期，因此存活的后代进程无法无限期地拖住结果不结算。系统会容忍 ESRCH；脱离 POSIX 进程组的 daemon 仍可能存活。
+- **非交互命令的父进程死亡 guardian**：stdin 为 `ignore` 或完整批量输入的普通 spawn 会使用一个私有 Node guardian 作为受管进程树根。宿主保持 guardian 的控制 stdin 打开；意外 EOF 会让它对 POSIX 进程组发送 SIGKILL，或在 Windows 对实际命令树运行 `taskkill /T /F`。Windows 宿主会在发送启动记录前，把仍在等待的 guardian 加入 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job；宿主句柄关闭时，内核会终止全部成员，而请求命令与 guardian 退出后，handle 仍能查询或终止残留后代。guardian 会转发批量 stdin、stdout、stderr、退出状态与实际命令的 spawn 失败。`hostDeath: 'terminate'` 请求必须使用这条路径，否则会在请求命令启动前被拒绝。由调用方持有原始 stdin 管道的运行与打包单文件运行时仍直接 spawn，无法准入该要求。
 - **按流划分的处置方式**：`'pipe'` 把原始流原样交给调用方（协议分帧仍归消费方所有）；`'inherit'` 直通父进程的描述符；收集模式（collect）在输出超过上限后于内存中保留尾部（错误与结果通常聚集在末尾，沿用 pi/OpenCode 的理由），并在配置了 spill 上限时把完整流追加到一个私有临时文件；省略 `spill` 则只保留用于诊断的尾部。某条流大于 spill 上限时，会丢弃已不完整的 spill，仅返回带截断标记的尾部；spill 文件描述符在结算时封存，最终关闭失败时则不公布路径，以免声称存在不完整的文件。spill 文件权限为 `0600`、名称随机，位于按需创建、权限为 `0700` 的每进程目录之下。
 - **凭据清除 + 显式合并**：以 `process.env` 为基础，移除形似凭据的变量（`*KEY*`／`*PASSWORD*`／`*SECRET*`／`*TOKEN*`）和所有环境中已有的 `DSH_*` 名称；spec 的显式 `env` 在该清除之后合并且不做命名空间校验，因此有意提供的凭据或当前 `DSH_*` 事实会胜出，而陈旧的嵌套 harness 身份无法从环境中隐式漏入。提供的 stdin 会被写入后关闭；否则 fd 0 指向 `/dev/null`。参见 [stdin/env Agent Note](../../../.agents/notes/implemented/architecture/2026-06-30-bash-stdin-env-trusted-plugin-api.md)与[受管环境 Agent Note](../../../.agents/notes/implemented/feature/2026-07-10-agent-session-identity-and-log-location.md)。
 - **基于偏移量的读取**：收集模式的读取器按完整流的字节坐标返回增量；服务自身从不持有游标，因此消费方自有的游标（bash 的后台读取路径）与完整流重读可以共存，结算前后皆然。
 - **可执行文件查找**：`resolveExecutable` 检查绝对文件，或根据平台可执行文件扩展名在清理后的有效 PATH 中搜索；含分隔符的相对路径在该 seam 处被拒绝，相对 PATH 条目从宿主进程 cwd 解析。
 - **终端进程所有权**：`spawnTerminal` 分配 `node-pty`，桥接 UTF-8 终端文本，检查当前前台进程组并向其发送信号，还会公开一项须等待的终止操作，在终止顶层 shell 前后清理后代进程。每次前台检查都会保留根进程树中的精确身份；Linux 还会在 POSIX 会话 leader 退出后枚举该会话。因此，之前观察到的 macOS 后代以及同会话 Linux 成员在重新设定父进程后仍受围栏保护，pid/start 身份则防止清理跟随 PID 复用。在 Windows 上，基于 koffi 的检查器通过 Toolhelp32 枚举进程表，把 GetProcessTimes 启动身份与进程句柄零时等待结合起来判断存活状态，并把 shell pid 作为伪前台进程组（Windows 没有 POSIX 进程组）。拆卸会验证 shell 已终止，因为被外部 taskkill 的 shell 可能永远不会触发 node-pty 的退出通知。上层 PTY 后端负责提示符就绪、缓冲区与面向模型的操作。
 - **先终止再等待退出的 dispose（资源释放）**：服务保留存活句柄，使自身的 dispose 能对每个仍在运行的进程树执行升级并等待其退出；完全停稳与 spawn 失败的句柄会在整棵进程树或 terminal session 清理完成后离开存活集合。
-- **同步宿主退出最终清理**：服务 effect 仍有效时，Node `exit` listener 会强制终止同一组存活集合中仍存在的每棵普通进程树和可观察 terminal session。这些仅供本地实现使用的操作会向受管 POSIX 进程组发送 SIGKILL、在 Windows 运行 `taskkill /T /F`，并在终止 PTY root 前后同步向已捕获及当前可观察的 terminal 身份发送信号；它们不会创建 Promise 或 timer，不改变宿主退出码与诊断，会分别包含每个目标的失败，也不会声称已经完全停稳。正常 dispose 仍使用上面的须等待温和路径。参见[宿主退出清理决策](../../../.agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md)。
+- **同步宿主退出最终清理**：服务 effect 仍有效时，Node `exit` listener 会强制终止同一组存活集合中仍存在的每棵普通进程树和可观察 terminal session。这些仅供本地实现使用的操作会向受管 POSIX 进程组发送 SIGKILL、终止受 guardian 保护的 Windows Job 或对直接形式运行 `taskkill /T /F`，并在终止 PTY root 前后同步向已捕获及当前可观察的 terminal 身份发送信号；它们不会创建 Promise 或 timer，不改变宿主退出码与诊断，会分别包含每个目标的失败，也不会声称已经完全停稳。正常 dispose 仍使用上面的须等待温和路径。参见[宿主退出清理决策](../../../.agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md)。
 
 ## 模型体验
 
@@ -26,7 +26,7 @@
 
 ## 已知限制与暂缓事项
 
-- **Windows 进程树支持仅为尽力而为**：终止经由 `taskkill /PID <pid> /T /F` 完成，所有结果都被就地吸收，不向外抛出（进程树已不存在、竞态、二进制缺失），存活探测则回退到直接子进程边界。
+- **Windows 直接进程形式的进程树支持仅为尽力而为**：原始 stdin 与打包运行时的终止经由 `taskkill /PID <pid> /T /F` 完成，结果就地吸收，存活探测回退到直接子进程边界。受 guardian 保护的非交互命令改用内核 Job 成员关系。
 - **Windows 终端信号是控制台级的**：SIGINT 以 `\x03` Ctrl-C 输入写入投递，由 conhost 转为控制台级 CTRL_C 事件；SIGTSTP 与 SIGHUP 被拒绝（不可用）；不带 `/F` 的 `taskkill` 无法终止控制台进程，因此拆卸的 TERM 档是 `/F` 升级前的宽限等待。Windows 就绪没有精确的 stdin-wait 档：prompt-marker 快路径把 shell pid 作为伪前台进程组比较，其余由静默/计时档覆盖。
 - **守护化的终端后代仍可能逃出可观察边界**：在 macOS 上，子进程如果在任何前台检查快照之前重新设定父进程，将无法再从 `node-pty` 根进程发现；在 Linux 上，调用 `setsid` 的子进程会同时离开进程树与自有终端会话。本地提供方不会新增持续进程表监视器。
 - **部分进程形式在 JavaScript 无法运行时仍需要外部所有权**：由调用方持有原始 stdin 管道的运行、terminal session 与打包单文件运行时不使用父进程死亡 guardian。其进程内清理会通过 Node 同步 `exit` 事件覆盖直接 `process.exit()`、默认未捕获异常和默认未处理 rejection。对于这些形式，未处理终止信号、`SIGKILL`、fatal OOM、`process.abort()`、native crash 与断电仍需由应用信号 handler、外部 supervisor、容器 init 或等价 OS 所有者负责。

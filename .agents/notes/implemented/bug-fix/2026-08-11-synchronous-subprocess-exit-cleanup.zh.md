@@ -16,7 +16,7 @@ Status: implemented
 
 该 listener使用本地实现私有的最终操作；公共 `SubprocessHandle`和 `SubprocessTerminalHandle`接口不包含这些操作：
 
-- 普通 handle立即向 detached POSIX进程组发送 SIGKILL，或在 Windows同步运行 `taskkill /PID <pid> /T /F`。
+- 普通 handle立即向 detached POSIX进程组发送 SIGKILL、终止受 guardian 保护的 Windows Job Object，或对 Windows 直接形式同步运行 `taskkill /PID <pid> /T /F`。
 - Terminal handle同步向全部已捕获及当前可观察的后代发送 SIGKILL，终止 PTY root，然后再扫描一次并终止在该边界期间变得可观察的成员。
 - 服务分别包含每个目标的失败并继续处理其余 handle。回调不会创建 Promise或 timer，不写诊断，也不改变原始退出码或错误。
 
@@ -26,13 +26,13 @@ Status: implemented
 | --- | --- | --- |
 | 正常 Cordis dispose | 协作式终止、有界升级，并等待普通／terminal清理 | dispose结算前，每个自有 handle均达到完全停稳 |
 | `process.exit()`、默认未捕获异常或默认未处理 rejection | 对服务当前存活集合发送同步最终信号 | 宿主退出后的外部观察 |
-| 无法执行 JavaScript 的宿主故障 | [父进程死亡 guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md)会终止 stdin 为 ignore 或批量输入的普通进程树；其他进程形式无法运行进程内操作 | 外部观察证明受保护进程树退出；原始 stdin pipe、terminal 与打包运行时仍需信号 handler、supervisor、容器或 OS 所有权 |
+| 无法执行 JavaScript 的宿主故障 | [父进程死亡 guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md)与 Windows kill-on-close Job 会终止 stdin 为 ignore 或批量输入的普通进程树；其他进程形式无法运行进程内操作 | 外部观察证明受保护进程树退出；原始 stdin pipe、terminal 与打包运行时仍需信号 handler、supervisor、容器或 OS 所有权 |
 
 ## Verification
 
 父测试通过仓库 source launcher启动隔离的 TypeScript宿主，等待精确 root与后代进程身份可观察后，再允许宿主进入各条致命路径。直接退出、默认未捕获异常和默认未处理 rejection覆盖忽略 TERM的普通进程树；直接退出还覆盖真实 terminal root与后代。父测试断言原始宿主退出类别，并等待所有已记录进程消失；失败清理只针对已记录身份或已记录的 Windows进程树。
 
-单元证据固定同步 POSIX进程组与 Windows taskkill投递、PTY root终止前后的 terminal扫描、重复最终清理、逐目标失败包含、正常 TERM到 KILL dispose、dispose等待期间保留存活集合，以及 dispose后移除 listener。
+单元证据固定同步 POSIX 进程组、受 guardian 保护的 Windows Job 与 Windows 直接形式的 taskkill 投递、PTY root 终止前后的 terminal 扫描、重复最终清理、逐目标失败包含、正常 TERM 到 KILL dispose、dispose 等待期间保留存活集合，以及 dispose 后移除 listener。
 
 ## Alternatives considered
 

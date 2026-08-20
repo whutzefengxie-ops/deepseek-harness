@@ -307,6 +307,7 @@ function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec
       stdout: { maxBytes: 4, spill: { maxBytes: 16 } },
       stderr: { maxBytes: 4 },
     },
+    hostDeath: 'allow',
     graceMs: 5,
     ...overrides,
   }
@@ -1626,6 +1627,14 @@ describe('E2BSubprocessRuntime', () => {
     const fiber = await ctx.plugin(E2BSubprocessRuntime)
     return { ctx, fiber }
   }
+
+  it('rejects required Host-death termination before remote allocation', async () => {
+    const fake = new FakeSandbox()
+    const { ctx } = await service(fake)
+    expect(() => ctx.subprocess.spawn(spec({ hostDeath: 'terminate' })))
+      .toThrow('subprocess-e2b: host-death termination is unavailable for remote processes')
+    expect(fake.startOptions).toBeUndefined()
+  })
 
   it('registers handles and disposal terminates and joins live remote groups regardless of sandbox policy', async () => {
     const fake = new FakeSandbox()

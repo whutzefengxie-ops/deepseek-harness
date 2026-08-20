@@ -188,6 +188,7 @@ export class LocalBashExecutor extends ShellExecutor {
         stdout: collect(stdoutMaxBytes),
         stderr: collect(this.config.maxOutputBytes),
       },
+      hostDeath: 'allow',
       graceMs: this.config.graceMs,
       signal,
       // One explicit env map for the seam, layered so the trusted dshEnv

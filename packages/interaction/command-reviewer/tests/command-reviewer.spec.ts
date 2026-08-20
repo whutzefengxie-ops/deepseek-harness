@@ -248,7 +248,8 @@ describe('/review durable background lifecycle', () => {
       commandId,
       focus: 'inspect recovery',
       request: {
-        prompt: 'review prior work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(), timeoutMs: 1_800_000,
+        prompt: 'review prior work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(),
+        hostDeath: 'terminate', timeoutMs: 1_800_000,
       },
     })
     agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
@@ -273,7 +274,8 @@ describe('/review durable background lifecycle', () => {
       commandId: acknowledgedId,
       focus: 'acknowledged',
       request: {
-        prompt: 'review acknowledged work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(), timeoutMs: 1_800_000,
+        prompt: 'review acknowledged work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(),
+        hostDeath: 'terminate', timeoutMs: 1_800_000,
       },
     })
     test.agent.session.append('command/done', {
@@ -307,6 +309,7 @@ describe('/review durable background lifecycle', () => {
     expect(spec?.argv[0]).toBe('/resolved/codex')
     expect(spec?.cwd).toBe('C:\\work\\repo')
     expect(spec?.stdio.stdout).toBe('pipe')
+    expect(spec?.hostDeath).toBe('terminate')
     expect(spec?.signal).toBeInstanceOf(AbortSignal)
     if (typeof spec?.stdio.stdin !== 'object') throw new Error('expected batch stdin')
     expect(spec.stdio.stdin.data).toContain('Reviewer focus for this run:\n审查上面的方案和代码修改')
@@ -319,6 +322,7 @@ describe('/review durable background lifecycle', () => {
       prompt: spec.stdio.stdin.data,
       argv: spec.argv,
       cwd: spec.cwd,
+      hostDeath: 'terminate',
       timeoutMs: 3_600_000,
     })
 

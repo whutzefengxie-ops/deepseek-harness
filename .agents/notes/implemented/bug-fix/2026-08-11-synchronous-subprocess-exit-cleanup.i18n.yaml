@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md
-2026-08-11-synchronous-subprocess-exit-cleanup.md: 08e4a05c1255336e89d75cd1a00492793b614e5e
-2026-08-11-synchronous-subprocess-exit-cleanup.zh.md: f3676bf29cb12169a155194e539a8f9bef9a8161
+2026-08-11-synchronous-subprocess-exit-cleanup.md: f53cbde55c0c22be9519329d14f36bd8663e1f22
+2026-08-11-synchronous-subprocess-exit-cleanup.zh.md: d5a972eeca6d1d46ccb86dfbcec3583c126821e4

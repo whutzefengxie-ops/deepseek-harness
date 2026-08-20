@@ -97,6 +97,7 @@ export class LspConnection {
         stdout: 'pipe',
         stderr: { maxBytes: spec.maxStderrBytes },
       },
+      hostDeath: 'allow',
       graceMs: spec.killGraceMs,
       // The seam merges explicit config entries after its ambient scrub, so a
       // configured credential or DSH_* fact reaches the child deliberately.

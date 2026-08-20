@@ -185,6 +185,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
         prompt: 'Check Host recovery.',
         argv: ['/resolved/codex', 'exec', '--json'],
         cwd,
+        hostDeath: 'terminate',
         timeoutMs: 1_800_000,
       },
     })

@@ -236,6 +236,7 @@ export async function runRipgrep(
         stdout: { maxBytes: rawOutputMaxBytes },
         stderr: { maxBytes: stderrMaxBytes },
       },
+      hostDeath: 'allow',
       graceMs,
       signal: exec.signal,
     } satisfies SubprocessSpawnSpec)

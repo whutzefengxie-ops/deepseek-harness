@@ -16,7 +16,7 @@ The public subprocess seam correctly promises awaited quiescence during normal d
 
 The listener uses local-only final operations that are absent from the public `SubprocessHandle` and `SubprocessTerminalHandle` interfaces:
 
-- An ordinary handle immediately sends SIGKILL to its detached POSIX process group or runs synchronous `taskkill /PID <pid> /T /F` on Windows.
+- An ordinary handle immediately sends SIGKILL to its detached POSIX process group, terminates its guarded Windows Job Object, or runs synchronous `taskkill /PID <pid> /T /F` for a direct Windows form.
 - A terminal handle synchronously signals every captured and currently observable descendant with SIGKILL, kills the PTY root, then rescans once for members that became observable during that boundary.
 - The service contains each target's failure and continues with the remaining handles. The callback creates no promise or timer, writes no diagnostic, and does not change the original exit code or error.
 
@@ -26,13 +26,13 @@ Normal disposal remains the [subprocess seam's](../architecture/2026-07-26-subpr
 | --- | --- | --- |
 | Normal Cordis disposal | Cooperative termination, bounded escalation, and awaited ordinary/terminal cleanup | Every owned handle reaches quiescence before disposal settles |
 | `process.exit()`, default uncaught exception, or default unhandled rejection | Synchronous final signals against the service's current live sets | External observation after the host exits |
-| Host failure that cannot execute JavaScript | The [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) terminates ordinary ignored-stdin and batch trees; other process forms cannot run an in-process action | External observation proves guarded-tree exit; raw stdin pipes, terminals, and packaged runtimes still require a signal handler, supervisor, container, or OS ownership |
+| Host failure that cannot execute JavaScript | The [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) and Windows kill-on-close Job terminate ordinary ignored-stdin and batch trees; other process forms cannot run an in-process action | External observation proves guarded-tree exit; raw stdin pipes, terminals, and packaged runtimes still require a signal handler, supervisor, container, or OS ownership |
 
 ## Verification
 
 A parent test starts an isolated TypeScript host through the repository source launcher, waits until exact root and descendant process identities are observable, then allows the host to take each fatal path. Direct exit, default uncaught exception, and default unhandled rejection cover ordinary TERM-resistant trees; direct exit also covers a real terminal root and descendant. The parent asserts the original host exit category and waits for every recorded process to disappear, while failure cleanup targets only recorded identities or the recorded Windows tree.
 
-Unit evidence pins synchronous POSIX group and Windows taskkill delivery, terminal scans before and after the PTY root kill, repeated finalization, per-target failure containment, normal TERM-to-KILL disposal, live-set retention during pending disposal, and listener removal after disposal.
+Unit evidence pins synchronous POSIX group, guarded Windows Job, and direct Windows taskkill delivery, terminal scans before and after the PTY root kill, repeated finalization, per-target failure containment, normal TERM-to-KILL disposal, live-set retention during pending disposal, and listener removal after disposal.
 
 ## Alternatives considered
 

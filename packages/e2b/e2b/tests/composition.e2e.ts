@@ -73,6 +73,7 @@ describe.skipIf(!process.env.E2B_API_KEY)('E2B live Loader composition', () => {
         ].join('\n')],
         cwd: '/home/user',
         stdio: { stdin: 'ignore', stdout: { maxBytes: 1_024 }, stderr: { maxBytes: 1_024 } },
+        hostDeath: 'allow',
         graceMs: 500,
         env: {},
       })

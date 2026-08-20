@@ -99,6 +99,7 @@ function spec(command: string, overrides: SpecOverrides = {}) {
       stdout: { maxBytes: stdoutMaxBytes, spill: { maxBytes: maxSpillBytes } },
       stderr: { maxBytes: stderrMaxBytes, spill: { maxBytes: maxSpillBytes } },
     },
+    hostDeath: 'allow' as const,
     graceMs: 3_000,
     ...rest,
   }
@@ -169,6 +170,34 @@ describe('spawnSubprocess', () => {
         .toThrow(`subprocess graceMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`)
     },
   )
+
+  it('rejects required Host-death termination before a direct raw-stdin spawn', () => {
+    expect(() => spawnSubprocess(spec('true', {
+      hostDeath: 'terminate',
+      stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+    }))).toThrow('host-death termination requires a non-packaged ignore or batch stdin spawn')
+  })
+
+  it.skipIf(process.platform !== 'win32')('reports a Job termination failure through the awaited exit observation', async () => {
+    const close = vi.fn()
+    const running = spawnSubprocess({
+      ...spec('true'),
+      argv: [process.execPath, '-e', 'setTimeout(() => {}, 250)'],
+    }, {
+      windowsJobFactory: () => ({
+        assign: () => {},
+        hasActiveProcesses: () => true,
+        terminate: () => { throw new Error('simulated Job termination failure') },
+        close,
+      }),
+    })
+
+    expect(() => { running.terminate() }).not.toThrow()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    await expect(running.waitForExit()).rejects.toThrow('simulated Job termination failure')
+    expect(close).toHaveBeenCalledOnce()
+    await expect(running.done).resolves.toEqual({ exitCode: 0, signal: null })
+  })
 
   it('captures stdout on success', async () => {
     const result = await finish(spawnSubprocess(spec('echo hello')))

@@ -237,6 +237,7 @@ export async function startCodexRun(
       argv: codexAppServerArgv(),
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+      hostDeath: 'allow',
       graceMs: spec.disposeGraceMs,
       env: spec.env,
     })

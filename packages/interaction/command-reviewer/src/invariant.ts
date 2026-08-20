@@ -80,6 +80,9 @@ function request(data: Record<string, unknown>, fail: InvariantFailure): void {
   if (typeof value.cwd !== 'string' || value.cwd.length === 0) {
     fail('review/start request cwd must be a non-empty string')
   }
+  if (value.hostDeath !== 'terminate') {
+    fail('review/start request hostDeath must be terminate')
+  }
   if (!Number.isSafeInteger(value.timeoutMs) || Number(value.timeoutMs) <= 0) {
     fail('review/start request timeoutMs must be a positive safe integer')
   }

@@ -88,7 +88,7 @@ interface SubprocessStdio {
 
 ## The fully-explicit spawn spec
 
-The seam applies no defaults: every disposition, limit, and directory is explicit on the spec, so the caller's own config — not a hidden subprocess-service default — decides them. `argv` is never shell-interpreted.
+The seam applies no defaults: every disposition, limit, directory, and Host-death requirement is explicit on the spec, so the caller's own config — not a hidden subprocess-service default — decides them. `hostDeath: 'terminate'` requires the provider to prevent the tree from retaining execution ability after its Host exits or reject before the requested command starts; `'allow'` accepts provider-specific survivor behavior. `argv` is never shell-interpreted.
 
 ```ts type-equiv
 /**
@@ -104,6 +104,14 @@ interface SubprocessSpawnSpec {
   cwd: string
   /** Per-stream stdio dispositions. */
   stdio: SubprocessStdio
+  /**
+   * Required behavior when the provider Host exits without disposing the
+   * handle. `'terminate'` requires the provider to prevent the process tree
+   * from retaining execution ability and to reject before launch when it
+   * cannot provide that guarantee. `'allow'` permits provider-specific
+   * survivors; ordinary handle termination and service disposal still apply.
+   */
+  hostDeath: 'allow' | 'terminate'
   /**
    * Positive finite grace period in milliseconds, no greater than
    * `MAX_TIMER_DELAY_MS`, for the {@link SubprocessHandle.terminate} escalation
@@ -138,10 +146,9 @@ A spawn returns a live handle immediately. Collect-mode readers take whole-strea
  * A live child process rooted in its own process tree. Collected output
  * remains readable after exit; piped streams belong to the caller.
  *
- * Termination is tree-scoped everywhere: POSIX signals the detached process
- * group (falling back to the direct child when the group is gone), Windows
- * terminates the tree via `taskkill /T`, so helper processes cannot outlive
- * the handle unnoticed.
+ * Termination and exit observation are tree-scoped: `terminate()` targets the
+ * provider-owned tree, and `waitForExit()` does not confirm quiescence while
+ * an observable member can still execute.
  */
 interface SubprocessHandle {
   /** Process id (tree root); -1 when the spawn itself failed. */
@@ -168,6 +175,7 @@ interface SubprocessHandle {
    * child, so a still-running helper is observable before teardown returns.
    * @param signal - optional bound for the wait.
    * @returns `true` when the tree exited, `false` when the signal aborted first.
+   * @throws when the provider cannot determine whole-tree liveness.
    */
   waitForExit(signal?: AbortSignal): Promise<boolean>
 }
@@ -285,6 +293,7 @@ Implementations must honor these semantics:
 - spawn returns immediately with a live handle; `done` resolves at process close with exit facts and rejects only for spawn-level failures.
 - Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another's output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.
 - SubprocessHandle.terminate (and the spec's abort signal) escalates SIGTERM→grace→SIGKILL — the only termination verb — tree-scoped on every platform. SubprocessHandle.waitForExit observes whole-tree liveness, so a consumer-owned teardown ladder can hold each tier on real quiescence.
+- A spawn whose `hostDeath` is `'terminate'` either starts under a provider-owned mechanism that removes the tree's execution ability when the Host exits or rejects before the requested command can start.
 - Disposal of the service terminates all still-running managed processes and awaits their exit.
 - spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.
 
@@ -320,5 +329,5 @@ abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
-Source: [`packages/subprocess/subprocess/src/index.ts:102`](../../packages/subprocess/subprocess/src/index.ts)
+Source: [`packages/subprocess/subprocess/src/index.ts:105`](../../packages/subprocess/subprocess/src/index.ts)
 <!-- END GENERATED cordis-surface -->

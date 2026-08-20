@@ -58,6 +58,7 @@ describe('SubprocessRuntime seam', () => {
       argv: ['true'],
       cwd: '/stub',
       stdio: { stdin: 'ignore', stdout: { maxBytes: 1 }, stderr: 'inherit' },
+      hostDeath: 'allow',
       graceMs: 1,
     })
     expect(handle.pid).toBe(1)

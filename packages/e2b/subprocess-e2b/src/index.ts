@@ -139,6 +139,9 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
   /** @inheritdoc */
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (this.disposing) throw new Error('subprocess-e2b: service is disposing')
+    if (spec.hostDeath === 'terminate') {
+      throw new Error('subprocess-e2b: host-death termination is unavailable for remote processes')
+    }
     const program = spec.argv[0]
     if (program === undefined || program.length === 0) {
       throw new Error('invalid argv: expected a non-empty program name at argv[0]')

@@ -23,6 +23,7 @@ function spec(command: string, overrides: Partial<SubprocessSpawnSpec> = {}): Su
       stdout: { maxBytes: 64_000, spill: { maxBytes: 64 * 1024 * 1024 } },
       stderr: { maxBytes: 64_000, spill: { maxBytes: 64 * 1024 * 1024 } },
     },
+    hostDeath: 'allow',
     graceMs: 200,
     ...overrides,
   }
@@ -115,6 +116,32 @@ describe('LocalSubprocessRuntime', () => {
     service.live.clear()
     service.terminals.clear()
     await fiber.dispose()
+  })
+
+  it.skipIf(process.platform !== 'win32')('retains a handle whose background Job observation fails for awaited disposal', async () => {
+    const ctx = new Context()
+    const disposalErrors: unknown[] = []
+    ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
+    const fiber = await ctx.plugin(LocalSubprocessRuntime)
+    const service = ctx.subprocess as LocalSubprocessRuntime
+    service.internals = {
+      windowsJobFactory: () => ({
+        assign: () => {},
+        hasActiveProcesses: () => { throw new Error('simulated Job query failure') },
+        terminate: () => {},
+        close: () => {},
+      }),
+    }
+
+    const handle = service.spawn(spec('true'))
+    await handle.done
+    await new Promise(resolve => setImmediate(resolve))
+    const live = (service as unknown as { live: Set<unknown> }).live
+    expect(live.size).toBe(1)
+
+    await fiber.dispose()
+    expect(disposalErrors).toHaveLength(1)
+    expect(disposalErrors[0]).toMatchObject({ message: 'simulated Job query failure' })
   })
 
   it('resolves absolute and PATH executables and honors lookup cancellation', async () => {

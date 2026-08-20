@@ -579,7 +579,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'review/activity': ReviewActivityData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:70`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:74`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewend--log-only"></a>
 
@@ -593,7 +593,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'review/end': ReviewEndData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:75`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:79`](../packages/interaction/command-reviewer/src/types.ts)
 
 <a id="reviewstart--log-only"></a>
 
@@ -607,7 +607,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'review/start': ReviewStartData
 ```
 
-来源：[`packages/interaction/command-reviewer/src/types.ts:65`](../packages/interaction/command-reviewer/src/types.ts)
+来源：[`packages/interaction/command-reviewer/src/types.ts:69`](../packages/interaction/command-reviewer/src/types.ts)
 
 ### `sandbox/*`
 

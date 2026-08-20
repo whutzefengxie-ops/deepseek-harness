@@ -152,7 +152,9 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     // case waitForExit resolves immediately after settlement.
     const release = (): Promise<void> =>
       handle.waitForExit().then(() => { this.live.delete(handle) })
-    handle.done.then(release, release)
+    void handle.done.then(release, release).catch(() => {
+      // Retain the handle so awaited service disposal reports the observation failure.
+    })
     return handle
   }
 

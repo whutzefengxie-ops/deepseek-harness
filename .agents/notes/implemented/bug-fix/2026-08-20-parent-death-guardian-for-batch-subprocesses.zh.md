@@ -12,17 +12,17 @@ Status: implemented
 
 ## Decision
 
-`dsh-subprocess-local` 会通过一个私有 Node guardian 启动每个 stdin 为 `ignore` 或完整批量输入、且不在打包单文件运行时中的普通 spawn。guardian 是公共 handle 的受管根。宿主通过 guardian stdin 发送一条 JSON 启动记录，并在 handle 整个生命周期内保留该管道。guardian 使用清理后的环境与请求 cwd 启动指定 argv，转发批量 stdin 与命令 stdout/stderr，并保留命令退出状态。另一条私有状态管道只传递实际命令的 spawn 失败，不会污染命令 stderr。
+`SubprocessSpawnSpec.hostDeath` 会显式声明宿主丢失后的行为。`'allow'` 接受提供方特有的存活行为，`'terminate'` 则要求提供方在宿主退出无法移除进程树执行能力时，于请求命令启动前拒绝。`dsh-subprocess-local` 可以为 stdin 为 `ignore` 或完整批量输入、且不在打包单文件运行时中的普通 spawn 准入该要求：它通过一个私有 Node guardian 启动这些命令。guardian 是公共 handle 的受管根。宿主通过 guardian stdin 发送一条 JSON 启动记录，并在 handle 整个生命周期内保留该管道。guardian 使用清理后的环境与请求 cwd 启动指定 argv，转发批量 stdin 与命令 stdout/stderr，并保留命令退出状态。另一条私有状态管道只传递实际命令的 spawn 失败，不会污染命令 stderr。
 
-控制管道意外 EOF 表示所有权丢失。在 POSIX 上，guardian 向自身 detached 进程组发送 SIGKILL；请求命令与普通后代都位于该组。在 Windows 上，guardian 会在退出前同步运行 `taskkill /PID <command-pid> /T /F`。正常 `terminate()` 仍通过提供方已有的 TERM 到 KILL 阶梯向以 guardian 为根的进程树发送信号，`waitForExit()` 仍观察完整进程树。已有的同步 `exit` 回调继续作为 JavaScript 可观察宿主退出的更快最终档，并继续持有 terminal session。
+控制管道意外 EOF 表示所有权丢失。在 POSIX 上，guardian 向自身 detached 进程组发送 SIGKILL；请求命令与普通后代都位于该组。在 Windows 上，宿主创建 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job，在发送启动记录前把等待中的 guardian 加入其中，并持有唯一的 Job handle。后代会加入该 Job，因此宿主死亡导致 handle 关闭时，Windows 会终止全部成员。请求命令与 guardian 退出后，Job 成员关系仍让残留后代可观察；正常 `terminate()` 调用 `TerminateJobObject`，`waitForExit()` 等待活动成员数降为零。Job 终止或成员查询失败时，提供方会关闭自有 handle 以触发 kill-on-close 约束，让等待式退出观察 reject，并继续持有进程 handle，直到 service dispose 报告该失败。guardian 的 EOF `taskkill /T /F` 仍是即时的次级档。已有的同步 `exit` 回调继续作为 JavaScript 可观察宿主退出的更快最终档，并继续持有 terminal session。
 
-由调用方持有原始 stdin 管道的运行仍直接 spawn，因为 fd 0 不能同时承载调用方协议与所有权租约。打包单文件运行时也继续直接 spawn，因为其 `process.execPath` 是产品可执行文件，而不是通用 Node 解释器。这些形式继续遵守提供方文档中的同步清理与外部 supervisor 要求。
+由调用方持有原始 stdin 管道的运行仍直接 spawn，因为 fd 0 不能同时承载调用方协议与所有权租约。打包单文件运行时也继续直接 spawn，因为其 `process.execPath` 是产品可执行文件，而不是通用 Node 解释器。这些形式继续遵守提供方文档中的同步清理与外部 supervisor 要求，并拒绝 `hostDeath: 'terminate'`。
 
 ## Verification
 
-进程级测试通过真实本地提供方启动一个隔离宿主，以及忽略 TERM 的根进程和后代，记录两个受管 pid，再从外部强制结束宿主。父测试会等待两个受管进程全部消失。同一套件还证明 guardian 保留批量 stdin、收集的 stdout、非零目标退出状态与目标 spawn 错误，并覆盖普通宿主退出清理和正常的先终止再等待退出 dispose。
+进程级测试通过真实本地提供方启动一个隔离宿主，以及忽略 TERM 的根进程和后代，记录两个受管 pid，再从外部强制结束宿主。父测试会等待两个受管进程全部消失。Windows 原生用例让请求根正常退出，同时保留一个 detached 后代：`done` 会结算，有界 `waitForExit()` 会报告仍存在的 Job 成员，正常终止则会将其移除。同一套件还证明 guardian 保留批量 stdin、收集的 stdout、非零目标退出状态与目标 spawn 错误，并覆盖普通宿主退出清理和正常的先终止再等待退出 dispose。
 
-`/review` 命令使用完整批量 stdin。它的启动记录在受 guardian 保护的 spawn 前到达 Session 持久化检查点，因此恢复出的未闭合审查表示此前宿主既已持久化该操作，之后又丢失所有权；guardian 已经终止此前的 Codex 进程树。
+`/review` 命令使用完整批量 stdin，要求 `hostDeath: 'terminate'`，并把该要求持久化到 `review/start.request`。它的启动记录在受 guardian 保护的 spawn 前到达 Session 持久化检查点，因此恢复出的未闭合审查表示此前宿主既已持久化该操作，也已在提供方保证下准入；该保证已经移除旧 Codex 进程树的执行能力。
 
 ## Alternatives considered
 
@@ -36,4 +36,4 @@ Status: implemented
 
 ## Consequences
 
-一个 stdin 为 ignore 或批量输入的普通命令会增加一个轻量 Node guardian 进程与一条私有状态管道。handle pid 标识 guardian 进程树根，而不是请求的可执行文件。命令 stdout、stderr、退出状态、终止与整树等待保留原有公共含义。普通宿主被强制结束后，不再遗留这些受保护的本地命令；terminal、原始 stdin pipe、打包运行时、daemon 逃逸与机器丢失限制仍保持显式。
+一个 stdin 为 ignore 或批量输入的普通命令会增加一个轻量 Node guardian 进程与一条私有状态管道；Windows 还会增加一个由宿主持有的内核 Job Object。handle pid 标识 guardian 进程树根，而不是请求的可执行文件。命令 stdout、stderr、退出状态、终止与整树等待保留原有公共含义。普通宿主被强制结束后，不再遗留这些受保护的本地命令；terminal、原始 stdin pipe、打包运行时、POSIX daemon 逃逸与机器丢失限制仍保持显式。

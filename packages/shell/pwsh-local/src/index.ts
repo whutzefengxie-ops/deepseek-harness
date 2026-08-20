@@ -235,6 +235,7 @@ export class PwshLocalExecutor extends ShellExecutor {
         stdout: collect(stdoutMaxBytes),
         stderr: collect(this.config.maxOutputBytes),
       },
+      hostDeath: 'allow',
       graceMs: this.config.graceMs,
       signal,
       env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv },
