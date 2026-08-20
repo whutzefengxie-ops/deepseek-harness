@@ -164,7 +164,7 @@ function seed(test: Harness): void {
 }
 
 async function run(test: Harness, suffix = '', controller = new AbortController()) {
-  const execution = await test.ctx.commands.execute(test.agent, `/review${suffix}`, controller.signal)
+  const execution = await test.ctx.commands.execute(test.agent, `/review${suffix}`, [], controller.signal)
   if (execution === undefined) throw new Error('review command was not registered')
   return execution
 }

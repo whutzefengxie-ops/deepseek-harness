@@ -116,7 +116,7 @@ describe('command-reviewer real Loader composition', () => {
       description: 'Review this conversation with the local Codex CLI (审查者)',
       input: { hint: '[optional review focus]' },
     })
-    const execution = await context.commands.execute(agent, '/review', new AbortController().signal)
+    const execution = await context.commands.execute(agent, '/review', [], new AbortController().signal)
     if (execution === undefined) throw new Error('Loader composition did not resolve /review')
     const start = session.events.find(event => event.type === 'review/start')
     expect(execution.result).toEqual({ kind: 'success', sourceEventSeq: start?.seq })
