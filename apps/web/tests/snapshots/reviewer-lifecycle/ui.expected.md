@@ -12,7 +12,7 @@
 - text: Please implement the concurrency fix. {{clock}}
 - button "Copy":
   - img
-- text: Review Completed review the concurrency fix analysis started pnpm exec vitest run reviewer done Codex JSONL events done message done
+- text: Review Completed review the concurrency fix analysis done analysis done pnpm exec vitest run reviewer done Codex JSONL events done message done
 - heading "Review result" [level=2]
 - paragraph: The browser request is detached from the admitted Codex process, and refresh replay preserves the result.
 - textbox "Message the agent"

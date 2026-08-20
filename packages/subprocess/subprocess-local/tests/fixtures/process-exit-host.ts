@@ -7,9 +7,9 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 const [kind, trigger, root] = process.argv.slice(2)
 if ((kind !== 'ordinary' && kind !== 'terminal')
   || (trigger !== 'direct' && trigger !== 'uncaught-exception'
-    && trigger !== 'unhandled-rejection' && trigger !== 'dispose')
+    && trigger !== 'unhandled-rejection' && trigger !== 'dispose' && trigger !== 'external-kill')
   || root === undefined) {
-  throw new Error('usage: process-exit-host.ts <ordinary|terminal> <direct|uncaught-exception|unhandled-rejection|dispose> <root>')
+  throw new Error('usage: process-exit-host.ts <ordinary|terminal> <direct|uncaught-exception|unhandled-rejection|dispose|external-kill> <root>')
 }
 
 const treeState = join(root, 'tree.json')
@@ -58,6 +58,8 @@ if (!Number.isSafeInteger(published.root) || !Number.isSafeInteger(published.des
   throw new Error('managed tree published invalid process ids')
 }
 await waitForFile(proceed)
+
+if (trigger === 'external-kill') await new Promise(() => {})
 
 if (trigger === 'dispose') {
   await fiber.dispose()

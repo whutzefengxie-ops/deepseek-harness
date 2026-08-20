@@ -5,7 +5,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -148,18 +148,24 @@ interface Harness {
   readonly plugin: Awaited<ReturnType<Context['plugin']>>
 }
 
-async function harness(options: { config?: commandReviewer.Config; settings?: boolean; cwd?: string } = {}): Promise<Harness> {
+async function harness(options: {
+  config?: commandReviewer.Config
+  settings?: boolean
+  cwd?: string
+  durability?: boolean
+} = {}): Promise<Harness> {
   const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  if (options.durability !== false) ctx.on('session/flush', () => {})
   await ctx.plugin(CommandRuntime)
   if (options.settings === true) await ctx.plugin(MemorySettings)
   await ctx.plugin(StubSubprocess)
   const subprocess = ctx.subprocess as unknown as StubSubprocess
   const plugin = ctx.plugin(commandReviewer, options.config ?? {})
   await plugin.await()
-  const session = Session.create(SESSION_ID, [], {
-    version: 0, id: SESSION_ID, createdAt: 0,
-    ...options.cwd === undefined ? {} : { cwd: options.cwd },
-  })
+  const session = ctx.sessions.create(SESSION_ID, options.cwd === undefined
+    ? undefined
+    : { meta: { cwd: options.cwd } })
   const agent = { id: SESSION_ID, session, ctx, status: 'idle', options: {} } as unknown as Agent
   return { ctx, subprocess, agent, plugin }
 }
@@ -202,7 +208,7 @@ async function reviewEnd(test: Harness) {
 describe('@deepseek-ai/dsh-command-reviewer registration', () => {
   it('registers a Loader-safe command and disposes it', async () => {
     const test = await harness()
-    expect(commandReviewer.inject).toEqual(['commands', 'subprocess'])
+    expect(commandReviewer.inject).toEqual(['commands', 'sessions', 'subprocess'])
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(commandReviewer)).toBe(commandReviewer)
     expect(test.ctx.commands.find(test.agent, 'review')).toMatchObject({ recordInput: false })
@@ -212,6 +218,7 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
 
   it('rejects a termination grace outside the Node timer range', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(StubSubprocess)
     await expect(ctx.plugin(commandReviewer, { terminateGraceMs: MAX_TIMER_DELAY_MS + 1 }))
@@ -221,6 +228,7 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
 
   it('rejects a review timeout outside the Node timer range', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionStore)
     await ctx.plugin(CommandRuntime)
     await ctx.plugin(StubSubprocess)
     await expect(ctx.plugin(commandReviewer, { timeoutMs: MAX_TIMER_DELAY_MS + 1 }))
@@ -318,6 +326,112 @@ describe('/review durable background lifecycle', () => {
     expect((await reviewEnd(test)).data).toEqual({
       commandId: execution.commandId, outcome: 'completed', text: 'Review text.',
     })
+  })
+
+  it('does not spawn until review/start reaches the session durability checkpoint', async () => {
+    const test = await harness()
+    seed(test)
+    const gate = Promise.withResolvers<undefined>()
+    let flushes = 0
+    test.ctx.on('session/flush', async () => {
+      flushes += 1
+      if (flushes === 1) await gate.promise
+    })
+
+    const execution = run(test)
+    await vi.waitFor(() => {
+      expect(test.agent.session.events.some(event => event.type === 'review/start')).toBe(true)
+    })
+    expect(test.subprocess.spawns).toEqual([])
+
+    gate.resolve(undefined)
+    await execution
+    expect(test.subprocess.spawns).toHaveLength(1)
+  })
+
+  it('does not spawn when review/start persistence fails and records the failed admission', async () => {
+    const test = await harness()
+    seed(test)
+    let flushes = 0
+    test.ctx.on('session/flush', () => {
+      flushes += 1
+      if (flushes === 1) throw new Error('storage unavailable')
+    })
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    expect(test.subprocess.spawns).toEqual([])
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'failed',
+      text: 'The review could not persist its start: storage unavailable',
+    })
+    expect(flushes).toBe(2)
+  })
+
+  it('retains admission when no durability listener can persist either lifecycle record', async () => {
+    const test = await harness({ durability: false })
+    seed(test)
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    expect(test.subprocess.spawns).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+      'review/start durability and terminal publication failed',
+    ))
+    const retry = (await run(test)).result
+    expect(retry.kind).toBe('error')
+    expect(retry.text).toContain('1 active review')
+  })
+
+  it('publishes cancellation without spawning when owner teardown occurs during start persistence', async () => {
+    const test = await harness()
+    seed(test)
+    const gate = Promise.withResolvers<undefined>()
+    let flushes = 0
+    test.ctx.on('session/flush', async () => {
+      flushes += 1
+      if (flushes === 1) await gate.promise
+    })
+
+    const execution = run(test)
+    await vi.waitFor(() => {
+      expect(test.agent.session.events.some(event => event.type === 'review/start')).toBe(true)
+    })
+    const disposal = test.plugin.dispose()
+    gate.resolve(undefined)
+
+    expect((await execution).result.kind).toBe('success')
+    await disposal
+    expect(test.subprocess.spawns).toEqual([])
+    expect((await reviewEnd(test)).data.outcome).toBe('cancelled')
+  })
+
+  it('reports cancellation publication failure during start-persistence teardown', async () => {
+    const test = await harness()
+    seed(test)
+    const gate = Promise.withResolvers<undefined>()
+    let flushes = 0
+    test.ctx.on('session/flush', async () => {
+      flushes += 1
+      if (flushes === 1) await gate.promise
+      if (flushes === 2) throw new Error('cancel storage unavailable')
+    })
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    const execution = run(test)
+    await vi.waitFor(() => {
+      expect(test.agent.session.events.some(event => event.type === 'review/start')).toBe(true)
+    })
+    const disposal = test.plugin.dispose()
+    gate.resolve(undefined)
+
+    expect((await execution).result.kind).toBe('success')
+    await disposal
+    expect(test.subprocess.spawns).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cancel storage unavailable'))
   })
 
   it('does not send request-configuration context to Codex as user dialogue', async () => {
@@ -977,7 +1091,7 @@ describe('/review durable background lifecycle', () => {
     expect(end.data.text).toContain('Codex process completion failed: completion transport failed')
   })
 
-  it('contains review/end append failures in background and spawn-failure paths', async () => {
+  it('retains ownership when review/end append fails in background and spawn-failure paths', async () => {
     const background = await harness()
     seed(background)
     background.subprocess.manual = true
@@ -988,6 +1102,9 @@ describe('/review durable background lifecycle', () => {
     await vi.waitFor(() => {
       expect(backgroundWarn).toHaveBeenCalledWith(expect.stringContaining('end append failed'))
     })
+    const backgroundRetry = (await run(background)).result
+    expect(backgroundRetry.kind).toBe('error')
+    expect(backgroundRetry.text).toContain('1 active review')
 
     const spawn = await harness()
     seed(spawn)
@@ -996,6 +1113,31 @@ describe('/review durable background lifecycle', () => {
     const spawnWarn = vi.spyOn(spawn.ctx.logger, 'warn')
     await run(spawn)
     expect(spawnWarn).toHaveBeenCalledWith(expect.stringContaining('spawn end append failed'))
+    const spawnRetry = (await run(spawn)).result
+    expect(spawnRetry.kind).toBe('error')
+    expect(spawnRetry.text).toContain('1 active review')
+  })
+
+  it('retains ownership when review/end cannot reach durable storage', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    let flushes = 0
+    test.ctx.on('session/flush', () => {
+      flushes += 1
+      if (flushes === 2) throw new Error('terminal storage unavailable')
+    })
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    await run(test)
+    test.subprocess.complete()
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('terminal storage unavailable'))
+    })
+
+    const retry = (await run(test)).result
+    expect(retry.kind).toBe('error')
+    expect(retry.text).toContain('1 active review')
   })
 
   it('handles disabled, empty, executable failures, and pre-aborted admission without a process', async () => {

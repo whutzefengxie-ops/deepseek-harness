@@ -473,7 +473,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-command-reviewer`
 
-需要：`commands` · `subprocess`
+需要：`commands` · `sessions` · `subprocess`
 
 ```ts config-catalog
 /** User-settings section of the reviewer command. */

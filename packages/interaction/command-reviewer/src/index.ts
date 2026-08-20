@@ -36,8 +36,8 @@ export type {
 
 export const name = 'command-reviewer'
 
-/** Required services: the human-command registry and the subprocess seam. */
-export const inject = ['commands', 'subprocess']
+/** Required services: commands, live sessions, and the subprocess seam. */
+export const inject = ['commands', 'sessions', 'subprocess']
 
 /** Default review instructions sent to Codex when the section carries none. */
 export const DEFAULT_REVIEW_PROMPT = [
@@ -158,6 +158,12 @@ function appendReviewEvent<T extends 'review/start' | 'review/activity' | 'revie
 ): SessionEvent<T> {
   const append = session.append.bind(session) as (eventType: T, eventData: SessionEventMap[T]) => SessionEvent<T>
   return append(type, data)
+}
+
+async function flushReviewLifecycle(ctx: Context, session: Session): Promise<void> {
+  if (!await ctx.sessions.flush(session)) {
+    throw new Error('command-reviewer: no session durability listener participated')
+  }
 }
 
 /** Settle review and command prefixes whose owning Host is gone. */
@@ -317,6 +323,11 @@ function ensureOwner(
   return owner
 }
 
+async function flushReviewStart(ctx: Context, session: Session, owner: ReviewOwner): Promise<boolean> {
+  await flushReviewLifecycle(ctx, session)
+  return owner.stopping
+}
+
 async function confirmProcessTreeExit(handle: SubprocessHandle): Promise<void> {
   if (!await handle.waitForExit()) {
     throw new Error('Codex process-tree exit wait ended without confirming exit')
@@ -402,11 +413,8 @@ async function runReview(
     : diagnostics.length === 0
       ? { commandId, outcome: 'completed', text: completedText }
       : { commandId, outcome: 'failed', text: renderFailedReview(diagnostics) }
-  try {
-    appendReviewEvent(session, 'review/end', end)
-  } catch (error: unknown) {
-    ctx.logger.warn(`command-reviewer: review/end append failed: ${renderThrown(error)}`)
-  }
+  appendReviewEvent(session, 'review/end', end)
+  await flushReviewLifecycle(ctx, session)
 }
 
 /** Register the `/review` command and its settings section. */
@@ -525,6 +533,38 @@ export function apply(ctx: Context, config: Config): void {
       settleOperation()
       throw error
     }
+    try {
+      if (await flushReviewStart(ctx, invocation.agent.session, owner)) {
+        try {
+          appendReviewEvent(invocation.agent.session, 'review/end', {
+            commandId, outcome: 'cancelled', text: renderCancelledReview([]),
+          })
+          await flushReviewLifecycle(ctx, invocation.agent.session)
+          settleOperation()
+        } catch (error: unknown) {
+          ctx.logger.warn(`command-reviewer: cancelled review publication remains owned: ${renderThrown(error)}`)
+          failOperation(error)
+        }
+        return { kind: 'success', sourceEventSeq: start.seq }
+      }
+    } catch (error: unknown) {
+      const text = `The review could not persist its start: ${renderThrown(error)}`
+      try {
+        appendReviewEvent(invocation.agent.session, 'review/end', {
+          commandId, outcome: 'failed', text,
+        })
+        await flushReviewLifecycle(ctx, invocation.agent.session)
+        settleOperation()
+      } catch (terminalError: unknown) {
+        const failure = new AggregateError(
+          [error, terminalError],
+          'command-reviewer: review/start durability and terminal publication failed',
+        )
+        ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(failure)}`)
+        failOperation(failure)
+      }
+      return { kind: 'success', sourceEventSeq: start.seq }
+    }
     const reviewDeadline = deadline(controller.signal, resolved.timeoutMs, REVIEW_TIMEOUT)
     let handle: SubprocessHandle
     try {
@@ -547,10 +587,12 @@ export function apply(ctx: Context, config: Config): void {
         appendReviewEvent(invocation.agent.session, 'review/end', {
           commandId, outcome: 'failed', text,
         })
-      } catch (appendError: unknown) {
-        ctx.logger.warn(`command-reviewer: review/end append failed: ${renderThrown(appendError)}`)
+        await flushReviewLifecycle(ctx, invocation.agent.session)
+        settleOperation()
+      } catch (terminalError: unknown) {
+        ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(terminalError)}`)
+        failOperation(terminalError)
       }
-      settleOperation()
       return { kind: 'success', sourceEventSeq: start.seq }
     }
 

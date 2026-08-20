@@ -25,6 +25,7 @@ import type {
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
+import { PARENT_DEATH_GUARDIAN_SOURCE } from './parent-death-guardian.ts'
 
 /**
  * Build a child environment: explicit caller entries override the scrubbed
@@ -347,18 +348,79 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   const stdinMode = spec.stdio.stdin
 
   const env = childEnv(spec.env)
-  const child = spawn(program, args, {
-    cwd: spec.cwd,
-    env,
-    stdio: [
-      stdinMode === 'ignore' ? 'ignore' : 'pipe',
-      outMode === 'inherit' ? 'inherit' : 'pipe',
-      errMode === 'inherit' ? 'inherit' : 'pipe',
-    ],
-    // `detached` gives teardown a tree root on POSIX (its own process group);
-    // Windows terminates by root pid through taskkill /T instead.
-    detached: platform !== 'win32',
-  })
+  // Platform overrides exercise signalling branches on a different host OS;
+  // keep those tests on the direct child because an actual guardian must use
+  // the host's real process-tree semantics. Production never overrides it.
+  const packagedProcess = process as NodeJS.Process & { pkg?: unknown }
+  const guardParentDeath = internals.platform === undefined
+    && packagedProcess.pkg === undefined
+    && stdinMode !== 'pipe'
+  const child = spawn(
+    guardParentDeath ? process.execPath : program,
+    guardParentDeath ? ['-e', PARENT_DEATH_GUARDIAN_SOURCE] : args,
+    {
+      cwd: spec.cwd,
+      env,
+      stdio: [
+        guardParentDeath ? 'pipe' : stdinMode === 'ignore' ? 'ignore' : 'pipe',
+        outMode === 'inherit' ? 'inherit' : 'pipe',
+        errMode === 'inherit' ? 'inherit' : 'pipe',
+        ...guardParentDeath ? ['pipe' as const] : [],
+      ],
+      // `detached` gives teardown a tree root on POSIX (its own process group);
+      // Windows terminates by root pid through taskkill /T instead.
+      detached: platform !== 'win32',
+    },
+  )
+
+  let targetSpawnFailure: Error | undefined
+  let targetSpawnStatus = Promise.resolve()
+  if (guardParentDeath) {
+    const control = child.stdin
+    const status = child.stdio[3] as Readable | null
+    if (control === null || status === null) {
+      throw new Error('subprocess parent-death guardian pipes are unavailable')
+    }
+    control.on('error', () => { /* Guardian exit closes its ownership pipe. */ })
+    control.write(`${JSON.stringify({
+      argv: spec.argv,
+      ...typeof stdinMode === 'object' ? { stdin: stdinMode.data } : {},
+    })}\n`)
+    const statusFinished = Promise.withResolvers<void>()
+    targetSpawnStatus = statusFinished.promise
+    let statusLine = ''
+    status.setEncoding('utf8')
+    status.on('data', (chunk: string) => {
+      statusLine += chunk
+      const newline = statusLine.indexOf('\n')
+      if (newline === -1 || targetSpawnFailure !== undefined) return
+      try {
+        const record = JSON.parse(statusLine.slice(0, newline)) as {
+          message?: unknown
+          code?: unknown
+          path?: unknown
+          syscall?: unknown
+        }
+        const error = new Error(typeof record.message === 'string' ? record.message : 'subprocess target spawn failed')
+        if (typeof record.code === 'string') Object.assign(error, { code: record.code })
+        if (typeof record.path === 'string') Object.assign(error, { path: record.path })
+        if (typeof record.syscall === 'string') Object.assign(error, { syscall: record.syscall })
+        targetSpawnFailure = error
+      } catch {
+        targetSpawnFailure = new Error('subprocess parent-death guardian returned malformed spawn status')
+      }
+    })
+    status.once('end', () => {
+      if (statusLine.length > 0 && !statusLine.includes('\n') && targetSpawnFailure === undefined) {
+        targetSpawnFailure = new Error('subprocess parent-death guardian returned truncated spawn status')
+      }
+      statusFinished.resolve()
+    })
+    status.once('error', (error) => {
+      targetSpawnFailure ??= error
+      statusFinished.resolve()
+    })
+  }
 
   const collectStream = (mode: SubprocessOutputMode, stream: Readable | null, label: string): OutputCollector | undefined => {
     if (!isCollect(mode) || stream === null) return undefined
@@ -441,8 +503,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     // Observe from the first termination tier onward, even when inherited
     // pipes delay `done` and no consumer has begun its own teardown wait.
     void observeTreeExit()
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- observer can record absence before its first await.
-    if (treeExitObserved) return
+    if (!treeAlive()) return
     kill('SIGTERM')
     // The escalation must survive direct-child settlement — the leader dying
     // does not mean the tree died — so settle does not clear this timer, and
@@ -462,7 +523,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
 
   // Batch stdin is written and closed up front; process exit and captured
   // output remain authoritative, so write errors (EPIPE) are best-effort.
-  if (typeof stdinMode === 'object' && child.stdin !== null) {
+  if (!guardParentDeath && typeof stdinMode === 'object' && child.stdin !== null) {
     child.stdin.on('error', () => { /* stdin write is best-effort; outcome rides on exit/output. */ })
     child.stdin.end(stdinMode.data)
   }
@@ -479,7 +540,10 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
       stdoutCollector?.seal()
       stderrCollector?.seal()
       cleanup()
-      resolve({ exitCode, signal })
+      void targetSpawnStatus.then(() => {
+        if (targetSpawnFailure === undefined) resolve({ exitCode, signal })
+        else reject(targetSpawnFailure)
+      })
     }
     child.on('error', (error) => {
       // No meaningful close outcome follows a spawn failure.

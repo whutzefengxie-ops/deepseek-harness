@@ -7,9 +7,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { createProcessInspector } from '../src/process-inspector.ts'
 import type { ProcessIdentity, ProcessInspector } from '../src/process-inspector.ts'
-import { taskkillProcessTree } from '../src/spawn.ts'
+import { spawnSubprocess, taskkillProcessTree } from '../src/spawn.ts'
 
-type ExitTrigger = 'direct' | 'uncaught-exception' | 'unhandled-rejection' | 'dispose'
+type ExitTrigger = 'direct' | 'uncaught-exception' | 'unhandled-rejection' | 'dispose' | 'external-kill'
 type ManagedKind = 'ordinary' | 'terminal'
 interface TreeState { root: number; descendant: number }
 
@@ -111,6 +111,7 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
     state = await readTree(join(root, 'tree.json'))
     if (process.platform !== 'win32') identities = await captureIdentities(createProcessInspector(), state)
     await writeFile(join(root, 'proceed'), 'proceed')
+    if (trigger === 'external-kill') child.kill('SIGKILL')
     const outcome = await child
     settled = true
     await waitForGone(state)
@@ -162,10 +163,52 @@ describe('synchronous cleanup on host exit', () => {
     },
   )
 
+  it('removes an ordinary managed tree after the Host is force-killed externally', { timeout: 45_000 }, async () => {
+    const { outcome } = await runScenario('ordinary', 'external-kill')
+    expect(outcome.failed).toBe(true)
+  })
+
   it('preserves normal terminate-and-join disposal and removes the exit listener', { timeout: 45_000 }, async () => {
     const { outcome, disposeCounts } = await runScenario('ordinary', 'dispose')
     expect(outcome.exitCode).toBe(0)
     expect(disposeCounts?.listenersAfterLoad).toBe((disposeCounts?.listenersBefore ?? 0) + 1)
     expect(disposeCounts?.listenersAfterDispose).toBe(disposeCounts?.listenersBefore)
+  })
+})
+
+describe('parent-death guardian command transport', () => {
+  it('preserves batch stdin, stdout, and the target exit code', async () => {
+    const handle = spawnSubprocess({
+      argv: [process.execPath, '-e', 'const fs=require("node:fs");let text="";process.stdin.on("data",chunk=>{text+=chunk});process.stdin.on("end",()=>{fs.writeSync(1,text);process.exit(19)})'],
+      cwd: process.cwd(),
+      stdio: {
+        stdin: { data: 'guardian transport\n' },
+        stdout: { maxBytes: 1_024 },
+        stderr: { maxBytes: 1_024 },
+      },
+      graceMs: 100,
+    })
+
+    const outcome = await handle.done
+    expect(outcome).toEqual({ exitCode: 19, signal: null })
+    expect(handle.collected.stdout?.readFrom(0).text).toBe('guardian transport\n')
+    await expect(handle.waitForExit()).resolves.toBe(true)
+  })
+
+  it('reports an actual-command spawn error through done', async () => {
+    const missing = join(tmpdir(), `dsh-missing-command-${process.pid}-${Date.now()}`)
+    const handle = spawnSubprocess({
+      argv: [missing],
+      cwd: process.cwd(),
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 1_024 },
+        stderr: { maxBytes: 1_024 },
+      },
+      graceMs: 100,
+    })
+
+    await expect(handle.done).rejects.toMatchObject({ code: 'ENOENT', path: missing })
+    await expect(handle.waitForExit()).resolves.toBe(true)
   })
 })

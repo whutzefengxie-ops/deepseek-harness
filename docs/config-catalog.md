@@ -471,7 +471,7 @@ Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../
 
 ## `@deepseek-ai/dsh-command-reviewer`
 
-Requires: `commands` · `subprocess`
+Requires: `commands` · `sessions` · `subprocess`
 
 ```ts config-catalog
 /** User-settings section of the reviewer command. */

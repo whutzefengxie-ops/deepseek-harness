@@ -1,8 +1,11 @@
-// Keyless shipped-Web coverage for durable /review replay, presentation, and
-// Host recovery. Synthetic records keep this lane independent of Codex and a
-// model credential; real command/process evidence belongs to the live E2E run.
+// Keyless shipped-Web coverage for the real /review command, local subprocess,
+// durable replay, presentation, and Host recovery. Only the external Codex CLI
+// is deterministic; Chromium, HTTP/RPC, command dispatch, persistence, and the
+// shipped subprocess provider run as composed production code.
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -26,8 +29,45 @@ describe('web e2e: durable reviewer lifecycle', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let fakeCodexRoot: string
+  let fakeCodexRelease: string
+  let originalPath: string | undefined
 
   beforeAll(async () => {
+    fakeCodexRoot = await mkdtemp(join(tmpdir(), 'dsh-web-reviewer-codex-'))
+    fakeCodexRelease = join(fakeCodexRoot, 'release')
+    const fakeCodex = join(fakeCodexRoot, 'fake-codex.mjs')
+    const reviewText = '## Review result\n\nThe browser request is detached from the admitted Codex process, and refresh replay preserves the result.'
+    await writeFile(fakeCodex, [
+      'await new Promise(resolve => { process.stdin.resume(); process.stdin.once("end", resolve) })',
+      `const started = ${JSON.stringify([
+        { type: 'thread.started', thread_id: 'web-reviewer-thread' },
+        { type: 'turn.started' },
+        { type: 'item.started', item: { id: 'reason', type: 'reasoning' } },
+      ])}`,
+      `const completed = ${JSON.stringify([
+        { type: 'item.completed', item: { id: 'reason', type: 'reasoning' } },
+        { type: 'item.completed', item: { id: 'command', type: 'command_execution', command: 'pnpm exec vitest run reviewer' } },
+        { type: 'item.completed', item: { id: 'search', type: 'web_search', query: 'Codex JSONL events' } },
+        { type: 'item.completed', item: { id: 'message', type: 'agent_message', text: reviewText } },
+        { type: 'turn.completed' },
+      ])}`,
+      'for (const event of started) process.stdout.write(`${JSON.stringify(event)}\\n`)',
+      `const release = ${JSON.stringify(fakeCodexRelease)}`,
+      'const { existsSync } = await import("node:fs")',
+      'while (!existsSync(release)) await new Promise(resolve => setTimeout(resolve, 20))',
+      'for (const event of completed) process.stdout.write(`${JSON.stringify(event)}\\n`)',
+      '',
+    ].join('\n'))
+    if (process.platform === 'win32') {
+      await writeFile(join(fakeCodexRoot, 'codex.CMD'), `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`)
+    } else {
+      const launcher = join(fakeCodexRoot, 'codex')
+      await writeFile(launcher, '#!/usr/bin/env node\nimport "./fake-codex.mjs"\n')
+      await chmod(launcher, 0o755)
+    }
+    originalPath = process.env.PATH
+    process.env.PATH = `${fakeCodexRoot}${delimiter}${originalPath ?? ''}`
     scaffold = await launchWebScaffold()
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -38,11 +78,17 @@ describe('web e2e: durable reviewer lifecycle', () => {
   }, 120_000)
 
   afterAll(async () => {
-    await browser?.close()
-    await scaffold?.close()
+    try {
+      await browser?.close()
+      await scaffold?.close()
+    } finally {
+      if (originalPath === undefined) Reflect.deleteProperty(process.env, 'PATH')
+      else process.env.PATH = originalPath
+      if (fakeCodexRoot !== undefined) await rm(fakeCodexRoot, { recursive: true, force: true })
+    }
   })
 
-  it('renders real progress categories and the final review without a duplicate command row', async () => {
+  it('submits /review through Chromium and persists real subprocess progress without a duplicate command row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle'))
     const session = scaffold.ctx.sessions.list()[0]
     if (session === undefined) throw new Error('fresh workspace did not create a session')
@@ -50,44 +96,47 @@ describe('web e2e: durable reviewer lifecycle', () => {
       content: [{ type: 'text', text: 'Please implement the concurrency fix.' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const commandId = CommandId('review-snapshot')
-    session.append('command/run', {
-      commandId, name: 'review', source: { kind: 'user' },
-    })
-    const start = session.append('review/start', {
-      commandId,
-      focus: 'review the concurrency fix',
-      request: {
-        prompt: 'Review the concurrency fix.',
-        argv: ['/resolved/codex', 'exec', '--json'],
-        cwd: scaffold.workspaceCwd,
-        timeoutMs: 1_800_000,
-      },
-    })
-    session.append('review/activity', {
-      commandId, activityId: 'turn', kind: 'analysis', status: 'started',
-    })
-    session.append('review/activity', {
-      commandId, activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm exec vitest run reviewer',
-    })
-    session.append('review/activity', {
-      commandId, activityId: 'search', kind: 'web-search', status: 'completed', detail: 'Codex JSONL events',
-    })
-    session.append('review/activity', {
-      commandId, activityId: 'message', kind: 'message', status: 'completed',
-    })
-    session.append('review/end', {
-      commandId,
-      outcome: 'completed',
-      text: '## Review result\n\nThe browser request is detached from the admitted Codex process, and refresh replay preserves the result.',
-    })
-    session.append('command/done', { commandId, kind: 'success', sourceEventSeq: start.seq })
+    const input = page.locator('textarea').first()
+    await input.waitFor({ timeout: 10_000 })
+    await input.fill('/review review the concurrency fix')
+    await input.press('Enter')
 
+    await page.locator('[data-reviewer][data-review-status="running"]').waitFor({ timeout: 15_000 })
+    await expect.poll(() => input.inputValue()).toBe('')
+    try {
+      await expect.poll(() => session.events.some(event => event.type === 'review/activity')).toBe(true)
+      const activity = page.getByLabel('Activity')
+      await activity.getByText('analysis', { exact: true }).first().waitFor({ timeout: 15_000 })
+      await activity.getByText('started', { exact: true }).first().waitFor({ timeout: 15_000 })
+    } finally {
+      await writeFile(fakeCodexRelease, '')
+    }
     await page.locator('[data-reviewer][data-review-status="completed"]').waitFor({ timeout: 15_000 })
+    expect(await input.isEnabled()).toBe(true)
     expect(await page.getByText('pnpm exec vitest run reviewer', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
     expect(await page.locator('[data-command-input]').count()).toBe(0)
     expect(await page.locator('[data-command-id]').count()).toBe(0)
+    await expect(scaffold.ctx.sessions.flush(session)).resolves.toBe(true)
+    const persisted = await scaffold.ctx.sessionPersistence.inspect(session.id)
+    expect(persisted.events.filter(event => event.type === 'command/run')).toMatchObject([{
+      data: { name: 'review' },
+    }])
+    expect(persisted.events.find(event => event.type === 'command/run')?.data).not.toHaveProperty('args')
+    expect(persisted.events.filter(event => event.type === 'review/start')).toHaveLength(1)
+    expect(persisted.events.filter(event => event.type === 'review/activity').map(event => event.data))
+      .toMatchObject([
+        { activityId: 'turn', kind: 'analysis', status: 'started' },
+        { activityId: 'reason', kind: 'analysis', status: 'started' },
+        { activityId: 'reason', kind: 'analysis', status: 'completed' },
+        { activityId: 'command', kind: 'command', status: 'completed' },
+        { activityId: 'search', kind: 'web-search', status: 'completed' },
+        { activityId: 'message', kind: 'message', status: 'completed' },
+        { activityId: 'turn', kind: 'analysis', status: 'completed' },
+      ])
+    expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
+      data: { outcome: 'completed' },
+    }])
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)

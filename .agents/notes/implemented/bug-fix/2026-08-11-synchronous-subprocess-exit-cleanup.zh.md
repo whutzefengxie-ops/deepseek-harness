@@ -26,7 +26,7 @@ Status: implemented
 | --- | --- | --- |
 | 正常 Cordis dispose | 协作式终止、有界升级，并等待普通／terminal清理 | dispose结算前，每个自有 handle均达到完全停稳 |
 | `process.exit()`、默认未捕获异常或默认未处理 rejection | 对服务当前存活集合发送同步最终信号 | 宿主退出后的外部观察 |
-| 未安装 handler 时由 `SIGTERM`、`SIGINT` 或 `SIGHUP` 默认终止；`SIGKILL`；fatal OOM；`process.abort()`；native crash；或断电 | 进程内操作无法运行 | 必须由外部 supervisor、容器或 OS 所有权负责；应用安装执行 dispose 或调用 `process.exit()` 的信号 handler 时除外 |
+| 无法执行 JavaScript 的宿主故障 | [父进程死亡 guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md)会终止 stdin 为 ignore 或批量输入的普通进程树；其他进程形式无法运行进程内操作 | 外部观察证明受保护进程树退出；原始 stdin pipe、terminal 与打包运行时仍需信号 handler、supervisor、容器或 OS 所有权 |
 
 ## Verification
 
@@ -42,10 +42,10 @@ Status: implemented
 
 **向公共 subprocess handle增加 raw `forceKill()`操作。** 拒绝，因为消费方只需要一项协作式终止约定。立即最终终止属于实现职责，只由本地服务的宿主退出 owner使用。
 
-**把所有故障模式交给外部 supervisor。** 不接受将其作为唯一方案，因为 Node为几条常见致命路径提供可靠的同步回调，而 provider已经拥有精确目标。JavaScript无法运行时仍必须依赖外部所有权。
+**把所有故障模式交给外部 supervisor。** 不接受将其作为唯一方案，因为 Node为几条常见致命路径提供可靠的同步回调，而 provider已经拥有精确目标。JavaScript 无法运行时，[父进程死亡 guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md)会覆盖 stdin 为 ignore 或批量输入的普通命令；被排除的进程形式仍需外部所有权。
 
 ## Consequences
 
 每个有效的本地 subprocess service都会贡献一个进程全局 exit listener，并随服务 effect移除。致命退出放弃宽限、输出排空与进程内停稳证明，以换取宿主消失前发出本地可用的最强终止操作。正常 dispose的保证与成本保持不变。
 
-listener无法覆盖不执行 JavaScript的故障，也无法发现 provider首次观察前已经逃逸的 terminal后代；该独立所有权缺口仍由 Issue #1726跟踪。
+listener 本身无法覆盖不执行 JavaScript 的故障。父进程死亡 guardian 会覆盖 stdin 为 ignore 或批量输入的普通命令；原始 stdin pipe、terminal session、打包运行时，以及 provider 首次观察前已经逃逸的 terminal 后代仍保留文档规定的外部所有权要求。terminal 逃逸缺口仍由 Issue #1726 跟踪。

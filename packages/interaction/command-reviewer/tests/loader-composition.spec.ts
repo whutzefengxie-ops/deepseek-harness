@@ -10,7 +10,8 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createMessage } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec, SubprocessTerminalHandle,
@@ -64,6 +65,12 @@ describe('command-reviewer real Loader composition', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-command-reviewer-loader-'))
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, [
+      "- name: '@deepseek-ai/dsh-session'",
+      "- name: '@deepseek-ai/dsh-session-persistence-jsonl'",
+      '  config:',
+      `    root: ${JSON.stringify(join(root, 'sessions'))}`,
+      '    compression: none',
+      '    writeBatchMaxDelayMs: 1',
       "- name: '@deepseek-ai/dsh-commands'",
       "- name: '@test/reviewer-subprocess'",
       "- name: '@deepseek-ai/dsh-command-reviewer'",
@@ -75,6 +82,8 @@ describe('command-reviewer real Loader composition', () => {
     await context.plugin(Loader)
     context.loader.builtins.include = Include
     const modules = new Map<string, unknown>([
+      ['@deepseek-ai/dsh-session', SessionStore],
+      ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
       ['@deepseek-ai/dsh-commands', CommandRuntime],
       ['@test/reviewer-subprocess', LoaderSubprocess],
       ['@deepseek-ai/dsh-command-reviewer', commandReviewer],
@@ -92,11 +101,8 @@ describe('command-reviewer real Loader composition', () => {
     })
     await context.loader.await()
 
-    const session = Session.create(SessionId('loader-command-reviewer'), [], {
-      version: 0,
-      id: SessionId('loader-command-reviewer'),
-      createdAt: 0,
-      cwd: root,
+    const session = context.sessions.create(SessionId('loader-command-reviewer'), {
+      meta: { cwd: root },
     })
     session.append('user/message', createMessage({
       role: 'user',
@@ -143,6 +149,9 @@ describe('command-reviewer real Loader composition', () => {
     expect(run?.type === 'command/run' && Object.hasOwn(run.data, 'args')).toBe(false)
     expect(session.events.filter(event => event.type.startsWith('review/')).map(event => event.type))
       .toEqual(['review/start', 'review/activity', 'review/end'])
+    await expect(context.sessionPersistence.inspect(session.id)).resolves.toMatchObject({
+      events: session.events,
+    })
     // The command lifecycle pair is log-only: derived history still holds only
     // the seeded user message.
     expect(session.deriveMessages()).toHaveLength(1)
