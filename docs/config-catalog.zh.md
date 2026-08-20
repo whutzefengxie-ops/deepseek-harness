@@ -492,6 +492,8 @@ export interface Config {
   context?: string
   /** Tail-keep bound in characters for the rendered transcript. */
   maxTranscriptChars?: number
+  /** UTF-8 byte cap for the complete prompt after all sections are assembled. */
+  maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
   /** Escalation grace in milliseconds for process-tree termination. */
@@ -509,7 +511,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-来源：[`packages/interaction/command-reviewer/src/index.ts:70`](../packages/interaction/command-reviewer/src/index.ts)
+来源：[`packages/interaction/command-reviewer/src/index.ts:72`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

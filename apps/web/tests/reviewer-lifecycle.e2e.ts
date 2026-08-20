@@ -52,7 +52,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
     }), { surfaceOp: 'append' })
     const commandId = CommandId('review-snapshot')
     session.append('command/run', {
-      commandId, name: 'review', args: ' review the concurrency fix', source: { kind: 'user' },
+      commandId, name: 'review', source: { kind: 'user' },
     })
     const start = session.append('review/start', {
       commandId,

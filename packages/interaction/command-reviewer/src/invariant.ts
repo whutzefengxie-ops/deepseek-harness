@@ -134,7 +134,7 @@ function applyEvent(trace: Trace, event: SessionEvent, fail: InvariantFailure): 
       if (command === undefined || command.name !== 'review' || command.runSeq >= event.seq) {
         fail(`review/start has no prior /review command/run for command ${commandId}`)
       }
-      if (typeof command.args !== 'string' || command.args.trim() !== data.focus) {
+      if (command.args !== undefined && (typeof command.args !== 'string' || command.args.trim() !== data.focus)) {
         fail(`review/start focus does not match command/run args for command ${commandId}`)
       }
       if (command.doneSeq !== undefined) fail(`review/start appears after command/done for command ${commandId}`)

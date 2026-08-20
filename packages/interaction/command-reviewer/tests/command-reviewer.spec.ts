@@ -52,6 +52,8 @@ class StubSubprocess extends SubprocessRuntime {
   collectStderr = true
   terminateStreamError = false
   terminateDoneError: Error | undefined
+  terminateError: Error | undefined
+  terminateOutcome: SubprocessOutcome = { exitCode: null, signal: 'SIGTERM' }
   manual = false
   manualWait = false
   waitError: Error | undefined
@@ -89,13 +91,14 @@ class StubSubprocess extends SubprocessRuntime {
     }
     let stopped = false
     const terminate = vi.fn(() => {
+      if (this.terminateError !== undefined) throw this.terminateError
       if (stopped) return
       stopped = true
       if (this.manual) {
         if (this.terminateStreamError) (stream as PassThrough).destroy(new Error('terminated stream'))
         else (stream as PassThrough).end()
       }
-      if (this.terminateDoneError === undefined) done.resolve({ exitCode: null, signal: 'SIGTERM' })
+      if (this.terminateDoneError === undefined) done.resolve(this.terminateOutcome)
       else done.reject(this.terminateDoneError)
     })
     const waitGate = this.manualWait ? Promise.withResolvers<boolean>() : undefined
@@ -202,7 +205,7 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
     expect(commandReviewer.inject).toEqual(['commands', 'subprocess'])
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(commandReviewer)).toBe(commandReviewer)
-    expect(test.ctx.commands.find(test.agent, 'review')).toBeDefined()
+    expect(test.ctx.commands.find(test.agent, 'review')).toMatchObject({ recordInput: false })
     await test.plugin.dispose()
     expect(test.ctx.commands.find(test.agent, 'review')).toBeUndefined()
   })
@@ -308,7 +311,7 @@ describe('/review durable background lifecycle', () => {
       prompt: spec.stdio.stdin.data,
       argv: spec.argv,
       cwd: spec.cwd,
-      timeoutMs: 1_800_000,
+      timeoutMs: 3_600_000,
     })
 
     test.subprocess.complete()
@@ -426,7 +429,9 @@ describe('/review durable background lifecycle', () => {
     seed(test)
     test.subprocess.nextStdout = `${JSON.stringify({ type: 'turn.failed', error: { message: 'authentication failed' } })}\n`
     await run(test)
-    expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'failed', text: 'The review failed: authentication failed' })
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'failed', text: 'The review failed: Codex reported: authentication failed',
+    })
   })
 
   it('reports a structured Codex failure together with its nonzero exit', async () => {
@@ -439,8 +444,61 @@ describe('/review durable background lifecycle', () => {
 
     expect((await reviewEnd(test)).data).toMatchObject({
       outcome: 'failed',
-      text: 'The review failed: codex exited with code 1. Codex reported: authentication failed',
+      text: [
+        'The review failed:',
+        '- Codex reported: authentication failed',
+        '- Codex exited with code 1.',
+      ].join('\n'),
     })
+  })
+
+  it('reports every structured Codex failure in arrival order', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = [
+      { type: 'error', message: 'network disconnected' },
+      { type: 'turn.failed', error: { message: 'request failed' } },
+    ].map(value => JSON.stringify(value)).join('\n') + '\n'
+
+    await run(test)
+
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'failed',
+      text: [
+        'The review failed:',
+        '- Codex reported: network disconnected',
+        '- Codex reported: request failed',
+      ].join('\n'),
+    })
+  })
+
+  it('combines malformed JSONL with a successful nonzero process outcome', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = [
+      JSON.stringify({ type: 'error', message: 'request already failed' }),
+      '{bad}',
+    ].join('\n') + '\n'
+    test.subprocess.nextOutcome = { exitCode: 2, signal: null }
+
+    await run(test)
+
+    const text = (await reviewEnd(test)).data.text
+    expect(text).toContain('Codex reported: request already failed')
+    expect(text).toContain('Codex output failed: invalid JSON')
+    expect(text).toContain('Codex exited with code 2.')
+  })
+
+  it('combines output overflow with signal termination', async () => {
+    const test = await harness({ config: { maxOutputBytes: 8 } })
+    seed(test)
+    test.subprocess.nextOutcome = { exitCode: null, signal: 'SIGKILL' }
+
+    await run(test)
+
+    const text = (await reviewEnd(test)).data.text
+    expect(text).toContain('Codex JSONL output exceeded configured limit of 8 bytes')
+    expect(text).toContain('Codex was terminated by SIGKILL.')
   })
 
   it('records malformed JSONL, missing output, nonzero exit, and output overflow as failures', async () => {
@@ -510,6 +568,19 @@ describe('/review durable background lifecycle', () => {
     invalid.subprocess.nextChunks = [1 as never]
     await run(invalid)
     expect((await reviewEnd(invalid)).data.text).toContain('non-byte chunk')
+
+    const termination = await harness()
+    seed(termination)
+    termination.subprocess.manual = true
+    termination.subprocess.terminateError = new Error('termination request failed')
+    await run(termination)
+    termination.subprocess.liveStream?.end('{bad}\n')
+    await vi.waitFor(() => { expect(termination.subprocess.terminations[0]).toHaveBeenCalledOnce() })
+    termination.subprocess.liveDone?.resolve({ exitCode: 2, signal: null })
+    const terminationText = (await reviewEnd(termination)).data.text
+    expect(terminationText).toContain('Codex output failed: invalid JSON')
+    expect(terminationText).toContain('Codex exited with code 2.')
+    expect(terminationText).toContain('Codex termination request failed: termination request failed')
   })
 
   it('decodes Buffer and Uint8Array chunks and ignores blank JSONL lines', async () => {
@@ -530,7 +601,7 @@ describe('/review durable background lifecycle', () => {
     seed(test)
     test.subprocess.nextStdout = JSON.stringify({ type: 'error', message: 'last-line failure' })
     await run(test)
-    expect((await reviewEnd(test)).data.text).toBe('The review failed: last-line failure')
+    expect((await reviewEnd(test)).data.text).toBe('The review failed: Codex reported: last-line failure')
   })
 
   it('reports signal termination with absent, empty, and truncated stderr', async () => {
@@ -626,6 +697,48 @@ describe('/review durable background lifecycle', () => {
     await test.plugin.dispose()
   })
 
+  it('bounds the complete UTF-8 review prompt before persistence and spawn', async () => {
+    const transcript = 'User: fix the bug\nAgent: done'
+    const boundary = '00000000-0000-0000-0000-000000000000'
+    const exactPrompt = commandReviewer.buildReviewPrompt(
+      commandReviewer.DEFAULT_REVIEW_PROMPT, '', '', transcript, boundary,
+    )
+    const exactBytes = Buffer.byteLength(exactPrompt)
+    const exact = await harness({ config: { maxPromptBytes: exactBytes } })
+    seed(exact)
+    expect((await run(exact)).result.kind).toBe('success')
+    expect(exact.subprocess.spawns).toHaveLength(1)
+
+    const oversized = await harness({ config: { maxPromptBytes: exactBytes - 1 } })
+    seed(oversized)
+    expect((await run(oversized)).result).toEqual({
+      kind: 'error',
+      text: `The review prompt is ${exactBytes} bytes; the configured limit is ${exactBytes - 1} bytes.`,
+    })
+    expect(oversized.subprocess.spawns).toEqual([])
+    expect(oversized.agent.session.events.some(event => event.type === 'review/start')).toBe(false)
+    const oversizedRun = oversized.agent.session.events.find(event => event.type === 'command/run')
+    expect(oversizedRun?.data).not.toHaveProperty('args')
+
+    const focus = '审查'
+    const multibytePrompt = commandReviewer.buildReviewPrompt(
+      commandReviewer.DEFAULT_REVIEW_PROMPT, '', focus, transcript, boundary,
+    )
+    const multibyteBytes = Buffer.byteLength(multibytePrompt)
+    const multibyte = await harness({ config: { maxPromptBytes: multibyteBytes - 1 } })
+    seed(multibyte)
+    expect((await run(multibyte, ` ${focus}`)).result).toEqual({
+      kind: 'error',
+      text: `The review prompt is ${multibyteBytes} bytes; the configured limit is ${multibyteBytes - 1} bytes.`,
+    })
+    expect(multibyte.subprocess.spawns).toEqual([])
+
+    const tiny = await harness({ config: { maxPromptBytes: 1 } })
+    seed(tiny)
+    expect((await run(tiny)).result.kind).toBe('error')
+    expect(tiny.subprocess.spawns).toEqual([])
+  })
+
   it('terminates the process tree and records a visible timeout failure', async () => {
     const test = await harness({ config: { timeoutMs: 10 } })
     seed(test)
@@ -641,9 +754,10 @@ describe('/review durable background lifecycle', () => {
     expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
     test.subprocess.waitGates[0]?.resolve(true)
     const end = await reviewEnd(test)
-    expect(end.data).toMatchObject({
-      outcome: 'failed', text: 'The review timed out after 10ms.',
-    })
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toContain('Timed out after 10ms.')
+    expect(end.data.text).toContain('Codex output failed: terminated stream')
+    expect(end.data.text).toContain('Codex was terminated by SIGTERM.')
   })
 
   it('classifies a cleanly closed stream after deadline as timed out', async () => {
@@ -653,8 +767,21 @@ describe('/review durable background lifecycle', () => {
     await run(test)
 
     expect((await reviewEnd(test)).data).toEqual(expect.objectContaining({
-      outcome: 'failed', text: 'The review timed out after 10ms.',
+      outcome: 'failed',
     }))
+  })
+
+  it('combines timeout, structured failure, and signal termination', async () => {
+    const test = await harness({ config: { timeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    await run(test)
+    test.subprocess.liveStream?.write(`${JSON.stringify({ type: 'error', message: 'upstream failed' })}\n`)
+
+    const text = (await reviewEnd(test)).data.text
+    expect(text).toContain('Timed out after 10ms.')
+    expect(text).toContain('Codex reported: upstream failed')
+    expect(text).toContain('Codex was terminated by SIGTERM.')
   })
 
   it('keeps the review owned when process-tree exit cannot be confirmed after an output failure', async () => {
@@ -703,7 +830,7 @@ describe('/review durable background lifecycle', () => {
 
     const end = await reviewEnd(test)
     expect(end.data.outcome).toBe('failed')
-    expect(end.data.text).toMatch(/invalid JSON.*Process completion also failed: spawn transport failed/su)
+    expect(end.data.text).toMatch(/invalid JSON.*Codex process completion failed: spawn transport failed/su)
   })
 
   it('keeps a timed-out review owned when process-tree exit cannot be confirmed', async () => {
@@ -814,7 +941,40 @@ describe('/review durable background lifecycle', () => {
     test.subprocess.terminateStreamError = true
     await run(test)
     await test.plugin.dispose()
-    expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'cancelled' })
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('cancelled')
+    expect(end.data.text).toContain('Codex output failed: terminated stream')
+    expect(end.data.text).toContain('Codex was terminated by SIGTERM.')
+  })
+
+  it('keeps a clean cancellation concise when Codex exits cleanly with final output', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.terminateOutcome = { exitCode: 0, signal: null }
+    await run(test)
+    test.subprocess.liveStream?.write(reviewJson())
+
+    await test.plugin.dispose()
+
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'cancelled', text: 'Review cancelled because its owner stopped.',
+    })
+  })
+
+  it('reports process-completion rejection during owner cancellation', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.terminateDoneError = new Error('completion transport failed')
+    await run(test)
+    test.subprocess.liveStream?.write(reviewJson())
+
+    await test.plugin.dispose()
+
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('cancelled')
+    expect(end.data.text).toContain('Codex process completion failed: completion transport failed')
   })
 
   it('contains review/end append failures in background and spawn-failure paths', async () => {

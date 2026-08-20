@@ -17,7 +17,7 @@ const REQUEST = {
 
 function appendStart(session: Session, commandId: CommandId, focus = ''): number {
   session.append('command/run', {
-    commandId, name: 'review', args: focus.length === 0 ? '' : ` ${focus}`, source: { kind: 'user' },
+    commandId, name: 'review', source: { kind: 'user' },
   })
   return session.append('review/start', { commandId, focus, request: REQUEST }).seq
 }
@@ -98,6 +98,11 @@ describe('command-reviewer durable invariant', () => {
       const commandId = CommandId('focus-mismatch')
       session.append('command/run', { commandId, name: 'review', args: ' expected', source: { kind: 'user' } })
       session.append('review/start', { commandId, focus: 'different', request: REQUEST })
+    }, /focus does not match/],
+    ['non-string legacy args', (session: Session) => {
+      const commandId = CommandId('invalid-legacy-args')
+      session.append('command/run', { commandId, name: 'review', args: 1 as never, source: { kind: 'user' } })
+      session.append('review/start', { commandId, focus: '', request: REQUEST })
     }, /focus does not match/],
     ['wrong done source', (session: Session) => {
       const commandId = CommandId('wrong-source')

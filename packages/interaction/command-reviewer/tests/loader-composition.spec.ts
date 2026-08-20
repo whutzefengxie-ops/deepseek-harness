@@ -134,11 +134,13 @@ describe('command-reviewer real Loader composition', () => {
       prompt: spec.stdio.stdin.data,
       argv: spec.argv,
       cwd: root,
-      timeoutMs: 1_800_000,
+      timeoutMs: 3_600_000,
     })
 
     expect(session.events.filter(event => event.type === 'command/run' || event.type === 'command/done')
       .map(event => event.type)).toEqual(['command/run', 'command/done'])
+    const run = session.events.find(event => event.type === 'command/run')
+    expect(run?.type === 'command/run' && Object.hasOwn(run.data, 'args')).toBe(false)
     expect(session.events.filter(event => event.type.startsWith('review/')).map(event => event.type))
       .toEqual(['review/start', 'review/activity', 'review/end'])
     // The command lifecycle pair is log-only: derived history still holds only

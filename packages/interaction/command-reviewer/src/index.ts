@@ -55,12 +55,14 @@ const STDERR_TAIL_BYTES = 4_096
 const STDERR_QUOTE_CHARS = 400
 /** Default tail-keep bound in characters for the rendered transcript. */
 const DEFAULT_MAX_TRANSCRIPT_CHARS = 200_000
+/** Default byte cap for the complete prompt persisted and written to Codex. */
+const DEFAULT_MAX_PROMPT_BYTES = 1_048_576
 /** Default complete JSONL output cap in bytes. */
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608
 /** Default escalation grace in milliseconds for process-tree termination. */
 const DEFAULT_TERMINATE_GRACE_MS = 3_000
 /** Default maximum elapsed time for one Codex review. */
-const DEFAULT_TIMEOUT_MS = 1_800_000
+const DEFAULT_TIMEOUT_MS = 3_600_000
 /** Default concurrent review limit for one Agent. */
 const DEFAULT_MAX_CONCURRENT_REVIEWS = 1
 /** Timeout identity used to distinguish elapsed deadlines from owner teardown. */
@@ -82,6 +84,8 @@ export interface Config {
   context?: string
   /** Tail-keep bound in characters for the rendered transcript. */
   maxTranscriptChars?: number
+  /** UTF-8 byte cap for the complete prompt after all sections are assembled. */
+  maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
   /** Escalation grace in milliseconds for process-tree termination. */
@@ -105,6 +109,7 @@ export const Config: z<Config> = z.object({
   prompt: z.string().default(DEFAULT_REVIEW_PROMPT),
   context: z.string().default(''),
   maxTranscriptChars: z.number().step(1).min(1).default(DEFAULT_MAX_TRANSCRIPT_CHARS),
+  maxPromptBytes: z.number().step(1).min(1).default(DEFAULT_MAX_PROMPT_BYTES),
   maxOutputBytes: z.number().step(1).min(1).default(DEFAULT_MAX_OUTPUT_BYTES),
   terminateGraceMs: z.number().step(1).min(1).default(DEFAULT_TERMINATE_GRACE_MS),
   timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
@@ -187,7 +192,19 @@ function chunkBuffer(chunk: unknown): Buffer {
 
 interface ParsedOutput {
   readonly finalText?: string
-  readonly failure?: string
+  readonly failures: readonly string[]
+}
+
+/** JSONL read failure with every result decoded before the failing byte. */
+class CodexOutputError extends Error {
+  /** Partial output observed before the reader failed. */
+  readonly output: ParsedOutput
+
+  /** @param cause - the JSONL, stream, or output-limit failure. @param output - partial decoded output. */
+  constructor(cause: unknown, output: ParsedOutput) {
+    super(renderThrown(cause), { cause })
+    this.output = output
+  }
 }
 
 async function readJsonl(
@@ -200,7 +217,11 @@ async function readJsonl(
   let carry = ''
   let bytes = 0
   let finalText: string | undefined
-  let failure: string | undefined
+  const failures: string[] = []
+  const snapshot = (): ParsedOutput => ({
+    ...finalText === undefined ? {} : { finalText },
+    failures: [...failures],
+  })
 
   const consume = (text: string): void => {
     carry += text
@@ -218,41 +239,42 @@ async function readJsonl(
         })
       }
       if (progress.finalText !== undefined) finalText = progress.finalText
-      if (progress.failure !== undefined) failure = progress.failure
+      if (progress.failure !== undefined) failures.push(progress.failure)
     }
   }
 
-  if (handle.stdout === undefined) {
-    const collected = handle.collected.stdout
-    if (collected === undefined) throw new Error('Codex stdout pipe is unavailable')
-    const bytesChunk = Buffer.from(collected.readFrom(0).text)
-    bytes = bytesChunk.byteLength
-    if (bytes > config.maxOutputBytes) {
-      throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
-    }
-    consume(decoder.write(bytesChunk))
-  } else {
-    for await (const chunk of handle.stdout) {
-      const bytesChunk = chunkBuffer(chunk)
-      bytes += bytesChunk.byteLength
+  try {
+    if (handle.stdout === undefined) {
+      const collected = handle.collected.stdout
+      if (collected === undefined) throw new Error('Codex stdout pipe is unavailable')
+      const bytesChunk = Buffer.from(collected.readFrom(0).text)
+      bytes = bytesChunk.byteLength
       if (bytes > config.maxOutputBytes) {
         throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
       }
       consume(decoder.write(bytesChunk))
+    } else {
+      for await (const chunk of handle.stdout) {
+        const bytesChunk = chunkBuffer(chunk)
+        bytes += bytesChunk.byteLength
+        if (bytes > config.maxOutputBytes) {
+          throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
+        }
+        consume(decoder.write(bytesChunk))
+      }
     }
-  }
-  consume(`${decoder.end()}\n`)
-  return {
-    ...finalText === undefined ? {} : { finalText },
-    ...failure === undefined ? {} : { failure },
+    consume(`${decoder.end()}\n`)
+    return snapshot()
+  } catch (error: unknown) {
+    throw new CodexOutputError(error, snapshot())
   }
 }
 
-function exitFailure(handle: SubprocessHandle, outcome: SubprocessOutcome): string {
+function exitDiagnostic(handle: SubprocessHandle, outcome: SubprocessOutcome): string {
   if (outcome.exitCode === null && outcome.signal !== null) {
-    return `The review failed: codex was terminated by ${outcome.signal}${stderrQuote(handle)}.`
+    return `Codex was terminated by ${outcome.signal}${stderrQuote(handle)}.`
   }
-  return `The review failed: codex exited with code ${String(outcome.exitCode)}${stderrQuote(handle)}.`
+  return `Codex exited with code ${String(outcome.exitCode)}${stderrQuote(handle)}.`
 }
 
 interface ReviewOperation {
@@ -301,21 +323,16 @@ async function confirmProcessTreeExit(handle: SubprocessHandle): Promise<void> {
   }
 }
 
-function completedFailure(
-  handle: SubprocessHandle,
-  outcome: SubprocessOutcome,
-  output: ParsedOutput,
-): string | undefined {
-  const exited = outcome.exitCode !== 0 ? exitFailure(handle, outcome) : undefined
-  if (exited !== undefined && output.failure !== undefined) {
-    return `${exited} Codex reported: ${output.failure}`
-  }
-  if (exited !== undefined) return exited
-  if (output.failure !== undefined) return `The review failed: ${output.failure}`
-  if (output.finalText === undefined || output.finalText.trim().length === 0) {
-    return 'Codex completed without producing review output.'
-  }
-  return undefined
+function renderFailedReview(diagnostics: readonly string[]): string {
+  if (diagnostics.length === 1) return `The review failed: ${diagnostics[0]}`
+  return `The review failed:\n${diagnostics.map(diagnostic => `- ${diagnostic}`).join('\n')}`
+}
+
+function renderCancelledReview(diagnostics: readonly string[]): string {
+  const summary = 'Review cancelled because its owner stopped.'
+  return diagnostics.length === 0
+    ? summary
+    : `${summary}\n${diagnostics.map(diagnostic => `- ${diagnostic}`).join('\n')}`
 }
 
 async function runReview(
@@ -326,62 +343,65 @@ async function runReview(
   config: Required<Config>,
   signal: AbortSignal,
 ): Promise<void> {
-  let output: ParsedOutput | undefined
-  let failure: string | undefined
-  let cancelled = false
-  let timedOut = false
+  let output: ParsedOutput
   let terminationRequested = false
+  let terminationFailure: unknown
   const terminate = (): void => {
     if (terminationRequested) return
     terminationRequested = true
-    handle.terminate()
+    try {
+      handle.terminate()
+    } catch (error: unknown) {
+      terminationFailure = error
+    }
   }
-  try {
-    const outcomePromise = handle.done.then((outcome) => {
+  const outputPromise = readJsonl(handle, config, session, commandId).catch((error: unknown) => {
+    if (!signal.aborted) terminate()
+    throw error
+  })
+  const outcomePromise = handle.done.then(
+    (outcome) => {
       if (!signal.aborted) terminate()
       return outcome
-    })
-    const [parsed, outcome] = await Promise.all([
-      readJsonl(handle, config, session, commandId),
-      outcomePromise,
-    ])
-    await confirmProcessTreeExit(handle)
-    output = parsed
-    timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
-    if (timedOut) {
-      failure = `The review timed out after ${config.timeoutMs}ms.`
-    } else if (signal.aborted) {
-      cancelled = true
-    } else {
-      failure = completedFailure(handle, outcome, output)
-    }
-  } catch (error: unknown) {
-    timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
-    cancelled = signal.aborted && !timedOut
-    if (timedOut) {
-      failure = `The review timed out after ${config.timeoutMs}ms.`
-    } else if (!cancelled) {
-      failure = renderThrown(error)
-    }
-    if (!signal.aborted) terminate()
-    let doneFailure: unknown
-    try {
-      await handle.done
-    } catch (error: unknown) {
-      doneFailure = error
-    }
-    await confirmProcessTreeExit(handle)
-    if (!cancelled && doneFailure !== undefined && doneFailure !== error) {
-      const diagnostic = renderThrown(doneFailure)
-      failure = `${failure} Process completion also failed: ${diagnostic}`
-    }
+    },
+    (error: unknown) => {
+      if (!signal.aborted) terminate()
+      throw error
+    },
+  )
+  const [outputResult, outcomeResult] = await Promise.allSettled([outputPromise, outcomePromise])
+  await confirmProcessTreeExit(handle)
+
+  const timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
+  const cancelled = signal.aborted && !timedOut
+  const diagnostics: string[] = []
+  if (timedOut) diagnostics.push(`Timed out after ${config.timeoutMs}ms.`)
+  if (outputResult.status === 'fulfilled') {
+    output = outputResult.value
+    diagnostics.push(...output.failures.map(failure => `Codex reported: ${failure}`))
+  } else {
+    const failure = outputResult.reason as CodexOutputError
+    output = failure.output
+    diagnostics.push(...output.failures.map(message => `Codex reported: ${message}`))
+    diagnostics.push(`Codex output failed: ${renderThrown(failure)}`)
   }
-  const completedText = output?.finalText?.trim() ?? ''
+  if (outcomeResult.status === 'fulfilled') {
+    if (outcomeResult.value.exitCode !== 0) diagnostics.push(exitDiagnostic(handle, outcomeResult.value))
+  } else {
+    diagnostics.push(`Codex process completion failed: ${renderThrown(outcomeResult.reason)}`)
+  }
+  if (terminationFailure !== undefined) {
+    diagnostics.push(`Codex termination request failed: ${renderThrown(terminationFailure)}`)
+  }
+  if (diagnostics.length === 0 && (output.finalText === undefined || output.finalText.trim().length === 0)) {
+    diagnostics.push('Codex completed without producing review output.')
+  }
+  const completedText = output.finalText?.trim() ?? ''
   const end: ReviewEndData = cancelled
-    ? { commandId, outcome: 'cancelled', text: 'Review cancelled because its owner stopped.' }
-    : failure === undefined
+    ? { commandId, outcome: 'cancelled', text: renderCancelledReview(diagnostics) }
+    : diagnostics.length === 0
       ? { commandId, outcome: 'completed', text: completedText }
-      : { commandId, outcome: 'failed', text: failure }
+      : { commandId, outcome: 'failed', text: renderFailedReview(diagnostics) }
   try {
     appendReviewEvent(session, 'review/end', end)
   } catch (error: unknown) {
@@ -415,6 +435,13 @@ export function apply(ctx: Context, config: Config): void {
       transcript,
       randomUUID(),
     )
+    const promptBytes = Buffer.byteLength(prompt)
+    if (promptBytes > resolved.maxPromptBytes) {
+      return {
+        kind: 'error',
+        text: `The review prompt is ${promptBytes} bytes; the configured limit is ${resolved.maxPromptBytes} bytes.`,
+      }
+    }
 
     const owner = ensureOwner(owners, invocation.agent)
     /* v8 ignore next -- teardown unregisters the command; this guard only closes an in-flight dispatch race. */
@@ -556,6 +583,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'review',
       description: 'Review this conversation with the local Codex CLI (审查者)',
       input: { hint: '[optional review focus]' },
+      recordInput: false,
       handler,
     })
   }, 'command-reviewer lifecycle')
