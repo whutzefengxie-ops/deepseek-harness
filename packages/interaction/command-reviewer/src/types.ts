@@ -60,6 +60,7 @@ export interface ReviewActivityData {
 export interface ReviewEndData {
   readonly commandId: CommandId
   readonly outcome: ReviewOutcome
+  /** Result or diagnostic containing a non-whitespace character, rendered by the Reviewer card. */
   readonly text: string
 }
 

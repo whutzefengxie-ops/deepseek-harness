@@ -15,7 +15,10 @@ export const inject = ['invariants']
 interface ReviewTrace {
   readonly startSeq: number
   ended: boolean
-  readonly activities: Map<string, 'started' | 'completed'>
+  readonly activities: Map<string, {
+    readonly kind: string
+    readonly status: 'started' | 'completed'
+  }>
 }
 
 interface CommandTrace {
@@ -162,13 +165,17 @@ function applyEvent(trace: Trace, event: SessionEvent, fail: InvariantFailure): 
         fail('review/activity detail must be a string when present')
       }
       const activityId = data.activityId
+      const kind = String(data.kind)
       const previous = review.activities.get(activityId)
+      if (previous !== undefined && previous.kind !== kind) {
+        fail(`review/activity kind changed for ${activityId} from ${previous.kind} to ${kind}`)
+      }
       if (data.status === 'started') {
         if (previous !== undefined) fail(`review/activity repeats start for ${activityId}`)
-        review.activities.set(activityId, 'started')
+        review.activities.set(activityId, { kind, status: 'started' })
       } else {
-        if (previous === 'completed') fail(`review/activity repeats completion for ${activityId}`)
-        review.activities.set(activityId, 'completed')
+        if (previous?.status === 'completed') fail(`review/activity repeats completion for ${activityId}`)
+        review.activities.set(activityId, { kind, status: 'completed' })
       }
       return
     }
@@ -179,6 +186,7 @@ function applyEvent(trace: Trace, event: SessionEvent, fail: InvariantFailure): 
         fail(`review/end outcome ${String(data.outcome)} is invalid`)
       }
       if (typeof data.text !== 'string') fail('review/end text must be a string')
+      if (data.text.trim().length === 0) fail('review/end text must contain a non-whitespace character')
       review.ended = true
       return
     }

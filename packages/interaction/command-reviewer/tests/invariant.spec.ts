@@ -241,11 +241,26 @@ describe('command-reviewer durable invariant', () => {
       session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'started' })
       session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'started' })
     }, /repeats start/],
+    ['activity kind change', (session: Session) => {
+      const commandId = CommandId('activity-kind-change')
+      appendStart(session, commandId)
+      session.append('review/activity', {
+        commandId, activityId: 'item:one', kind: 'analysis', status: 'started',
+      })
+      session.append('review/activity', {
+        commandId, activityId: 'item:one', kind: 'command', status: 'completed',
+      })
+    }, /kind changed for item:one from analysis to command/],
     ['invalid end text', (session: Session) => {
       const commandId = CommandId('end-text')
       appendStart(session, commandId)
       session.append('review/end', { commandId, outcome: 'failed', text: null as never })
     }, /text must be a string/],
+    ['blank end text', (session: Session) => {
+      const commandId = CommandId('blank-end-text')
+      appendStart(session, commandId)
+      session.append('review/end', { commandId, outcome: 'completed', text: ' \n\t ' })
+    }, /text must contain a non-whitespace character/],
   ] as const)('rejects %s before committing it', async (_label, mutate, pattern) => {
     const ctx = await setup()
     const session = ctx.sessions.create()

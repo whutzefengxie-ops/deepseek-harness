@@ -7,6 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
+import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -16,6 +17,7 @@ import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec, SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import * as commandReviewer from '../src/index.ts'
+import * as reviewerInvariant from '../src/invariant.ts'
 
 const SESSION_ID = SessionId('command-reviewer')
 
@@ -650,6 +652,25 @@ describe('/review durable background lifecycle', () => {
     })
     expect(end.data.text).toBe('Review text.')
     expect(test.agent.session.deriveMessages()).toEqual(before)
+  })
+
+  it('fails visibly when real handler JSONL reuses an item id with another kind', async () => {
+    const test = await harness()
+    await test.ctx.plugin(InvariantRegistry, { enabled: true })
+    await test.ctx.plugin(reviewerInvariant)
+    seed(test)
+    test.subprocess.nextStdout = [
+      { type: 'item.started', item: { id: 'reused', type: 'reasoning' } },
+      { type: 'item.completed', item: { id: 'reused', type: 'command_execution', command: 'git status' } },
+      { type: 'item.completed', item: { id: 'message', type: 'agent_message', text: 'Missed failure.' } },
+    ].map(value => JSON.stringify(value)).join('\n') + '\n'
+
+    await run(test)
+
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toContain('kind changed for item:reused from analysis to command')
+    expect(test.agent.session.events.filter(event => event.type === 'review/activity')).toHaveLength(1)
   })
 
   it('records a JSONL error as a visible failed review', async () => {
