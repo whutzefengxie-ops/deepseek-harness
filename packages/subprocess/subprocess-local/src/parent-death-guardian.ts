@@ -78,7 +78,10 @@ function launch(line) {
     reportSpawnError(error);
   });
   command.once('spawn', () => { status.end(); });
-  if (stdin !== undefined) command.stdin.end(stdin);
+  if (stdin !== undefined) {
+    command.stdin.on('error', () => { /* Target stdin closure is best-effort; outcome rides on target close. */ });
+    command.stdin.end(stdin);
+  }
   command.once('close', (code, signal) => {
     if (reportingFailure) return;
     if (ownerGone) return terminateForOwnerLoss();

@@ -5,7 +5,7 @@
  * @module @deepseek-ai/dsh-command-reviewer/codex
  */
 
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { Message } from '@deepseek-ai/dsh-llm'
 import type {
   ReviewActivityKind, ReviewActivityStatus,
 } from './types.ts'
@@ -265,15 +265,6 @@ function roleLabel(role: Message['role']): string {
   return role === 'assistant' ? 'Agent' : 'User'
 }
 
-/** Recover the readable text of one tool result from its nested content. */
-function toolResultText(block: Extract<ContentBlock, { type: 'tool-result' }>): string {
-  const texts: string[] = []
-  for (const child of block.content) {
-    if (child.type === 'text') texts.push(child.text)
-  }
-  return texts.join(' ')
-}
-
 /** Keep conversational evidence while omitting request-configuration context. */
 function isTranscriptEvidence(message: Message): boolean {
   const source = message.source
@@ -301,20 +292,56 @@ function isTranscriptEvidence(message: Message): boolean {
  *   it exceeds the bound.
  */
 export function renderTranscript(messages: readonly Message[], maxChars: number): string {
-  const lines: string[] = []
+  const tail: string[] = []
+  let tailStart = 0
+  let characterCount = 0
+  let hasRows = false
+  const append = (text: string): void => {
+    for (const character of text) {
+      characterCount += 1
+      if (tail.length < maxChars) tail.push(character)
+      else {
+        tail[tailStart] = character
+        tailStart = (tailStart + 1) % maxChars
+      }
+    }
+  }
+  const startRow = (): void => {
+    if (hasRows) append('\n')
+    else hasRows = true
+  }
   for (const message of messages) {
     if (!isTranscriptEvidence(message)) continue
     for (const block of message.content) {
       switch (block.type) {
         case 'text':
-          lines.push(`${roleLabel(message.role)}: ${block.text}`)
+          startRow()
+          append(roleLabel(message.role))
+          append(': ')
+          append(block.text)
           break
         case 'tool-call':
-          lines.push(`Agent tool call: ${block.name}(${block.arguments})`)
+          startRow()
+          append('Agent tool call: ')
+          append(block.name)
+          append('(')
+          append(block.arguments)
+          append(')')
           break
-        case 'tool-result':
-          lines.push(`Tool result (${block.toolCallId}): ${toolResultText(block)}`)
+        case 'tool-result': {
+          startRow()
+          append('Tool result (')
+          append(block.toolCallId)
+          append('): ')
+          let hasText = false
+          for (const child of block.content) {
+            if (child.type !== 'text') continue
+            if (hasText) append(' ')
+            append(child.text)
+            hasText = true
+          }
           break
+        }
         default:
           // reasoning, image, and unknown future blocks are skipped: they add
           // bulk, not review surface.
@@ -322,9 +349,9 @@ export function renderTranscript(messages: readonly Message[], maxChars: number)
       }
     }
   }
-  const full = lines.join('\n')
-  const characters = Array.from(full)
-  if (characters.length <= maxChars) return full
-  const tail = characters.slice(-maxChars).join('')
-  return `[Transcript truncated: showing the last ${maxChars} of ${characters.length} characters.]\n${tail}`
+  const renderedTail = tailStart === 0
+    ? tail.join('')
+    : `${tail.slice(tailStart).join('')}${tail.slice(0, tailStart).join('')}`
+  if (characterCount <= maxChars) return renderedTail
+  return `[Transcript truncated: showing the last ${maxChars} of ${characterCount} characters.]\n${renderedTail}`
 }

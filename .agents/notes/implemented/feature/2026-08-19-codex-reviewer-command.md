@@ -14,7 +14,7 @@ The review itself is a prompt-and-run job for an external tool. The local Codex 
 
 ### `/review` is a host-plane command over the subprocess seam
 
-`@deepseek-ai/dsh-command-reviewer` registers the global human command `/review` (审查者) through `ctx.commands` and requires `ctx.sessions` plus `ctx.subprocess`. The handler projects the receiving session's derived messages into a plain-text transcript (`renderTranscript`: conversational text, tool calls, and tool results, excluding request-configuration context, reasoning, and images), counts and tail-truncates that text by Unicode code point, assembles the review prompt, and spawns one non-interactive run:
+`@deepseek-ai/dsh-command-reviewer` registers the global human command `/review` (审查者) through `ctx.commands` and requires `ctx.sessions` plus `ctx.subprocess`. The handler projects the receiving session's derived messages into a plain-text transcript (`renderTranscript`: conversational text, tool calls, and tool results, excluding request-configuration context, reasoning, and images), incrementally counts Unicode code points while retaining only the configured tail, assembles the review prompt, and spawns one non-interactive run:
 
 ```text
 codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [-m <model>] -c model_reasoning_effort=<effort>

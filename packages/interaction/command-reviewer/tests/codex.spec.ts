@@ -416,6 +416,20 @@ describe('renderTranscript', () => {
     expect(rendered.split('\n').at(-1)).toBe('😀')
   })
 
+  it('keeps a bounded tail from one tool result far larger than the configured limit', () => {
+    const prefix = 'Tool result (large): '
+    const text = `${'a'.repeat(2 * 1024 * 1024)}😀tail`
+    const rendered = renderTranscript([
+      message('user', [{
+        type: 'tool-result', toolCallId: 'large' as never, content: [{ type: 'text', text }],
+      }]),
+    ], 5)
+
+    expect(rendered).toBe(
+      `[Transcript truncated: showing the last 5 of ${prefix.length + 2 * 1024 * 1024 + 5} characters.]\n😀tail`,
+    )
+  })
+
   it('keeps the full transcript exactly at the bound', () => {
     const text = 'User: abc'
     const rendered = renderTranscript([message('user', [{ type: 'text', text: 'abc' }])], text.length)

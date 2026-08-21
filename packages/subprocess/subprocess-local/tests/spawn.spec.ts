@@ -34,6 +34,8 @@ function shellArgv(command: string): string[] {
     case 'echo to-parent; echo err >&2': return node('console.log("to-parent"); console.error("err")')
     case 'exit 42': return node('process.exit(42)')
     case 'exit 7': return node('process.exit(7)')
+    case 'exec 0<&-; sleep 0.2; exit 7':
+      return node('process.stdin.destroy(); setTimeout(() => process.exit(7), 200)')
     case 'pwd': return node('console.log(process.cwd())')
     case 'sleep 60': return node('setTimeout(() => {}, 60000)')
     case 'cat': return node('process.stdin.pipe(process.stdout)')
@@ -455,11 +457,11 @@ describe('stdin and extra env (set by in-process plugins)', () => {
     expect(result.stdout.text).toBe('explicit-wins\n')
   })
 
-  it('does not crash or reject when the child ignores a large stdin (EPIPE)', async () => {
-    // The child exits without reading, so closing a stdin pipe holding ~1 MiB triggers EPIPE.
-    // The handler swallows that write error and `done` reports the child's real exit.
-    const big = 'x'.repeat(1024 * 1024)
-    const result = await finish(spawnSubprocess(spec('exit 7', { stdin: big })))
+  it('keeps the guardian alive when the target closes a large batch stdin pipe (EPIPE)', async () => {
+    // The target closes fd 0 while the guardian is still writing, then stays
+    // alive long enough for EPIPE to reach that guardian before the real exit.
+    const big = 'x'.repeat(16 * 1024 * 1024)
+    const result = await finish(spawnSubprocess(spec('exec 0<&-; sleep 0.2; exit 7', { stdin: big })))
     expect(result.exitCode).toBe(7)
   })
 })

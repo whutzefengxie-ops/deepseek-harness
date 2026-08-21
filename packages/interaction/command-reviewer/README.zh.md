@@ -34,7 +34,7 @@ Web 客户端把这些事件重建为一张独立审查卡片。卡片展示真�
 | `sandbox` | `read-only` | `codex exec --sandbox`；取值 `read-only`、`workspace-write`、`danger-full-access`。可写模式允许对话记录驱动的审查命令使用所选权限。 |
 | `prompt` | 内置审查指令 | 审查指令；`{transcript}` 标记对话记录插入的位置，不含占位符时对话记录追加在末尾。 |
 | `context` | `''` | 追加为带标签段落的部署级场景上下文。 |
-| `maxTranscriptChars` | `200000` | 对话记录渲染文本按 Unicode code point 计算的尾部保留上限。 |
+| `maxTranscriptChars` | `200000` | 按 Unicode code point 计算的尾部保留上限；渲染过程增量统计输入，并且只持有这段有界尾部。 |
 | `maxPromptBytes` | `1048576` | 指令、对话记录保护、上下文与关注点全部组装后，完整提示词的 UTF-8 字节上限。 |
 | `maxOutputBytes` | `8388608` | 流式 Codex JSONL 完整输出的字节上限；可容纳仓库检查，同时仍会终止失控输出。 |
 | `terminateGraceMs` | `3000` | 进程树终止的升级宽限（毫秒）；受 Node 定时器上限约束。 |

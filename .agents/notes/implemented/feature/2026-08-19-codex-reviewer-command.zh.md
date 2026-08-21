@@ -14,7 +14,7 @@ Status: implemented
 
 ### `/review` 是宿主平面上一条走子进程接缝的命令
 
-`@deepseek-ai/dsh-command-reviewer` 通过 `ctx.commands` 注册全局人工命令 `/review`（审查者），并依赖 `ctx.sessions` 与 `ctx.subprocess`。处理器把接收会话的推导消息投影成纯文本对话记录（`renderTranscript`：对话文本、工具调用和工具结果；请求配置上下文、推理与图片被排除），按 Unicode code point 计数并截取尾部，组装审查提示词，然后启动一次非交互运行：
+`@deepseek-ai/dsh-command-reviewer` 通过 `ctx.commands` 注册全局人工命令 `/review`（审查者），并依赖 `ctx.sessions` 与 `ctx.subprocess`。处理器把接收会话的推导消息投影成纯文本对话记录（`renderTranscript`：对话文本、工具调用和工具结果；请求配置上下文、推理与图片被排除），增量统计 Unicode code point 并且只保留配置的尾部，组装审查提示词，然后启动一次非交互运行：
 
 ```text
 codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [-m <model>] -c model_reasoning_effort=<effort>

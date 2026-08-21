@@ -34,7 +34,7 @@ The plugin registers the `command-reviewer` settings namespace when a settings s
 | `sandbox` | `read-only` | `codex exec --sandbox`; one of `read-only`, `workspace-write`, `danger-full-access`. Writable modes allow transcript-driven review commands to use the selected permissions. |
 | `prompt` | built-in review instructions | Review instructions; `{transcript}` marks where the conversation goes, otherwise the transcript is appended. |
 | `context` | `''` | Deployment-level scenario context appended as a labelled section. |
-| `maxTranscriptChars` | `200000` | Tail-keep bound in Unicode code points for the rendered transcript. |
+| `maxTranscriptChars` | `200000` | Tail-keep bound in Unicode code points; rendering counts the input incrementally and retains only this bounded tail. |
 | `maxPromptBytes` | `1048576` | UTF-8 byte cap for the complete prompt after instructions, transcript protection, context, and focus are assembled. |
 | `maxOutputBytes` | `8388608` | Complete byte cap for the streamed Codex JSONL output; large enough for repository inspection while still terminating runaway output. |
 | `terminateGraceMs` | `3000` | Escalation grace in milliseconds for process-tree termination; bounded by the Node timer maximum. |
