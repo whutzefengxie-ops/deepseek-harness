@@ -140,20 +140,15 @@ describe('codexReviewLaunch', () => {
 })
 
 describe('parseCodexJsonLine', () => {
-  it('keeps synthetic turn activity separate from untrusted Codex item ids', () => {
-    expect(parseCodexJsonLine('{"type":"turn.started"}').activity?.activityId).toBe('turn:main')
+  it('ignores turn lifecycle records and namespaces untrusted Codex item ids', () => {
+    expect(parseCodexJsonLine('{"type":"turn.started"}')).toEqual({})
+    expect(parseCodexJsonLine('{"type":"turn.completed"}')).toEqual({})
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'turn', type: 'reasoning' },
     })).activity?.activityId).toBe('item:turn')
   })
 
-  it('maps turn, command, tool, search, file, message, and unknown item events', () => {
-    expect(parseCodexJsonLine('{"type":"turn.started"}')).toEqual({
-      activity: { activityId: 'turn:main', kind: 'analysis', status: 'started' },
-    })
-    expect(parseCodexJsonLine('{"type":"turn.completed"}')).toEqual({
-      activity: { activityId: 'turn:main', kind: 'analysis', status: 'completed' },
-    })
+  it('maps reasoning, command, tool, search, file, message, and unknown item events', () => {
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'reason', type: 'reasoning' },
     }))).toEqual({ activity: {

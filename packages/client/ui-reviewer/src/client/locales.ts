@@ -13,6 +13,13 @@ export const zh = {
   started: '开始',
   stopped: '已停止',
   done: '完成',
+  analysis: '分析',
+  command: '命令',
+  tool: '工具',
+  webSearch: '网页搜索',
+  fileChange: '文件修改',
+  message: '消息',
+  other: '其他',
 } as const
 /** English reviewer-card messages. */
 export const en = {
@@ -27,6 +34,13 @@ export const en = {
   started: 'started',
   stopped: 'stopped',
   done: 'done',
+  analysis: 'analysis',
+  command: 'command',
+  tool: 'tool',
+  webSearch: 'web search',
+  fileChange: 'file change',
+  message: 'message',
+  other: 'other',
 } as const
 /** Message keys shared by every reviewer-card locale. */
 export type ReviewerKey = keyof typeof zh

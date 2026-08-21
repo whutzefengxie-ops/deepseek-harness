@@ -7,7 +7,7 @@
 {"type":"command/run","data":{"commandId":"sdk-snapshot-review","name":"review","args":" inspect the SDK event projection","source":{"kind":"user"}}}
 {"type":"review/start","data":{"commandId":"sdk-snapshot-review","focus":"inspect the SDK event projection","request":{"prompt":"Inspect the SDK event projection.","argv":["/snapshot/codex","exec","--json"],"cwd":"/snapshot/workspace","hostDeath":"terminate","timeoutMs":1800000}}}
 {"type":"command/done","data":{"commandId":"sdk-snapshot-review","kind":"success","sourceEventSeq":6}}
-{"type":"review/activity","data":{"commandId":"sdk-snapshot-review","activityId":"turn:main","kind":"analysis","status":"completed"}}
+{"type":"review/activity","data":{"commandId":"sdk-snapshot-review","activityId":"item:reasoning","kind":"analysis","status":"completed"}}
 {"type":"review/end","data":{"commandId":"sdk-snapshot-review","outcome":"completed","text":"SDK reviewer projection complete."}}
 {"type":"session/title","data":{"title":"Reply with exactly: SDK snapshot","messageSeqs":[4],"source":{"kind":"fallback"}}}
 {"type":"request/header","data":{"header":{"config":{"provider":"deepseek-official","model":"deepseek-v4-flash"},"system":"{{system}}","tools":"{{tools}}"},"reason":"initial"}}

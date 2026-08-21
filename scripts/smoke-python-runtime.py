@@ -78,7 +78,7 @@ return (ctx) => {
     })
     agent.session.append('review/activity', {
       commandId,
-      activityId: 'turn:main',
+      activityId: 'item:reasoning',
       kind: 'analysis',
       status: 'completed'
     })

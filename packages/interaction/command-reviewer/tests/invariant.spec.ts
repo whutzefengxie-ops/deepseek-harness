@@ -39,10 +39,10 @@ describe('command-reviewer durable invariant', () => {
     const startSeq = appendStart(session, commandId)
     session.append('command/done', { commandId, kind: 'success', sourceEventSeq: startSeq })
     session.append('review/activity', {
-      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
+      commandId, activityId: 'item:reason', kind: 'analysis', status: 'started',
     })
     session.append('review/activity', {
-      commandId, activityId: 'turn:main', kind: 'analysis', status: 'completed',
+      commandId, activityId: 'item:reason', kind: 'analysis', status: 'completed',
     })
     // Codex can emit item.completed without an item.started record.
     session.append('review/activity', {
@@ -200,27 +200,20 @@ describe('command-reviewer durable invariant', () => {
         commandId, activityId: '' as never, kind: 'analysis', status: 'started',
       })
     }, /activityId must be a non-empty string/],
-    ['invalid activity namespace', (session: Session) => {
+    ['legacy synthetic turn activity', (session: Session) => {
       const commandId = CommandId('activity-namespace')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: 'turn' as never, kind: 'analysis', status: 'started',
+        commandId, activityId: 'turn:main' as never, kind: 'analysis', status: 'started',
       })
-    }, /activityId must be turn:main or item:<external id>/],
+    }, /activityId must be item:<external id>/],
     ['empty external activity id', (session: Session) => {
       const commandId = CommandId('empty-external-activity-id')
       appendStart(session, commandId)
       session.append('review/activity', {
         commandId, activityId: 'item:', kind: 'message', status: 'completed',
       })
-    }, /activityId must be turn:main or item:<external id>/],
-    ['non-analysis turn activity', (session: Session) => {
-      const commandId = CommandId('turn-kind')
-      appendStart(session, commandId)
-      session.append('review/activity', {
-        commandId, activityId: 'turn:main', kind: 'command', status: 'started',
-      })
-    }, /turn:main must use analysis kind/],
+    }, /activityId must be item:<external id>/],
     ['invalid activity kind', (session: Session) => {
       const commandId = CommandId('activity-kind')
       appendStart(session, commandId)

@@ -26,6 +26,21 @@ function activityStatusText(
   if (activityStatus === 'completed') return t('done')
   return reviewStatus === 'running' ? t('started') : t('stopped')
 }
+function assertNever(value: never): never {
+  throw new Error(`Unexpected reviewer activity kind: ${String(value)}`)
+}
+function activityKindText(kind: ReviewerChatData['activities'][number]['kind'], t: Props['t']): string {
+  switch (kind) {
+    case 'analysis': return t('analysis')
+    case 'command': return t('command')
+    case 'tool': return t('tool')
+    case 'web-search': return t('webSearch')
+    case 'file-change': return t('fileChange')
+    case 'message': return t('message')
+    case 'other': return t('other')
+    default: return assertNever(kind)
+  }
+}
 
 /** Render one replayable review lifecycle and its final Markdown. */
 export function ReviewerPanel({ node, t }: Props) {
@@ -40,7 +55,7 @@ export function ReviewerPanel({ node, t }: Props) {
     <div className={css.activities} aria-label={t('activity')}>
       {data.activities.length > 0
         ? data.activities.map(activity => <div className={css.activity} key={activity.activityId}>
-          <span>{activity.detail ?? activity.kind}</span>
+          <span>{activity.detail ?? activityKindText(activity.kind, t)}</span>
           <span className={css.activityStatus}>{activityStatusText(activity.status, data.status, t)}</span>
         </div>)
         : data.status === 'running' && <span className={css.empty}>{t('empty')}</span>}

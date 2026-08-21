@@ -18,8 +18,8 @@ export type ReviewActivityKind =
 /** Lifecycle state of one progress item. */
 export type ReviewActivityStatus = 'started' | 'completed'
 
-/** Plugin-owned turn identity or one namespaced external Codex item identity. */
-export type ReviewActivityId = 'turn:main' | `item:${string}`
+/** Namespaced identity of one external Codex item. */
+export type ReviewActivityId = `item:${string}`
 
 /** Terminal state of one review run. */
 export type ReviewOutcome = 'completed' | 'failed' | 'cancelled' | 'interrupted'

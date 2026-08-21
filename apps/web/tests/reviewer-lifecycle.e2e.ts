@@ -147,13 +147,11 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(persisted.events.filter(event => event.type === 'review/start')).toHaveLength(1)
       expect(persisted.events.filter(event => event.type === 'review/activity').map(event => event.data))
         .toMatchObject([
-          { activityId: 'turn:main', kind: 'analysis', status: 'started' },
           { activityId: 'item:reason', kind: 'analysis', status: 'started' },
           { activityId: 'item:reason', kind: 'analysis', status: 'completed' },
           { activityId: 'item:command', kind: 'command', status: 'completed' },
           { activityId: 'item:search', kind: 'web-search', status: 'completed' },
           { activityId: 'item:message', kind: 'message', status: 'completed' },
-          { activityId: 'turn:main', kind: 'analysis', status: 'completed' },
         ])
       expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
         data: { outcome: 'completed' },
@@ -260,7 +258,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       },
     })
     original.agent.session.append('review/activity', {
-      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
+      commandId, activityId: 'item:reason', kind: 'analysis', status: 'started',
     })
     await expect(scaffold.ctx.sessions.flush(original.agent.session)).resolves.toBe(true)
     await workspace.attachSession(sessionId)
@@ -345,7 +343,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       },
     })
     original.agent.session.append('review/activity', {
-      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
+      commandId, activityId: 'item:reason', kind: 'analysis', status: 'started',
     })
     original.agent.session.append('review/end', {
       commandId, outcome: 'completed', text: 'Terminal review survived the acknowledgement gap.',

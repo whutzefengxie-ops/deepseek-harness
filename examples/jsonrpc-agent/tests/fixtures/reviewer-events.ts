@@ -31,7 +31,7 @@ export function apply(ctx: Context): void {
     })
     agent.session.append('command/done', { commandId, kind: 'success', sourceEventSeq: start.seq })
     agent.session.append('review/activity', {
-      commandId, activityId: 'turn:main', kind: 'analysis', status: 'completed',
+      commandId, activityId: 'item:reasoning', kind: 'analysis', status: 'completed',
     })
     agent.session.append('review/end', {
       commandId, outcome: 'completed', text: 'SDK reviewer projection complete.',

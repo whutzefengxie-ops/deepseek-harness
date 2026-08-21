@@ -205,12 +205,6 @@ export function parseCodexJsonLine(line: string): CodexJsonProgress {
   }
   const event = objectValue(parsed, 'Codex event')
   const type = stringValue(event.type, 'Codex event type')
-  if (type === 'turn.started') {
-    return { activity: { activityId: 'turn:main', kind: 'analysis', status: 'started' } }
-  }
-  if (type === 'turn.completed') {
-    return { activity: { activityId: 'turn:main', kind: 'analysis', status: 'completed' } }
-  }
   if (type === 'turn.failed') return { failure: failureMessage(event.error) }
   if (type === 'error') return { failure: failureMessage(event.message ?? event.error) }
   if (type !== 'item.started' && type !== 'item.completed') return {}

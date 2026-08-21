@@ -642,7 +642,7 @@ describe('/review durable background lifecycle', () => {
     const reviewEvents = test.agent.session.events.filter(event => event.type.startsWith('review/'))
     expect(reviewEvents.map(event => event.type)).toEqual([
       'review/start', 'review/activity', 'review/activity', 'review/activity',
-      'review/activity', 'review/activity', 'review/activity', 'review/activity', 'review/end',
+      'review/activity', 'review/activity', 'review/end',
     ])
     expect(reviewEvents.filter(event => event.type === 'review/activity').map(event => event.data)).toContainEqual({
       commandId: execution.commandId,

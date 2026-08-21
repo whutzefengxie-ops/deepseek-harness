@@ -51,10 +51,13 @@ function reviewerNode(value: ConversationNodeAssembler): ChatConversationViewNod
   return [...(value.snapshot('chat') as Snapshot).nodes.values()][0]
 }
 
-function panelProps(panelData: ReviewerChatData): Parameters<typeof ReviewerPanel>[0] {
+function panelProps(
+  panelData: ReviewerChatData,
+  messages: typeof zh | typeof en = zh,
+): Parameters<typeof ReviewerPanel>[0] {
   return {
     node: { data: panelData },
-    t: makeTranslate(zh),
+    t: makeTranslate(messages),
   } as unknown as Parameters<typeof ReviewerPanel>[0]
 }
 
@@ -69,7 +72,7 @@ function match(seq: number, type: string, eventData: unknown) {
 describe('reviewer durable Conversation Definition', () => {
   const lifecycle = [
     at(1, 'review/start', { commandId: 'cmd-1', focus: '只看并发' }),
-    at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'turn:main', kind: 'analysis', status: 'started' }),
+    at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'item:reason', kind: 'analysis', status: 'started' }),
     at(3, 'review/activity', { commandId: 'cmd-1', activityId: 'item:command', kind: 'command', status: 'started', detail: 'pnpm test' }),
     at(4, 'review/activity', { commandId: 'cmd-1', activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test' }),
     at(5, 'review/end', { commandId: 'cmd-1', outcome: 'completed', text: '## 结论\n\n发现一个问题。' }),
@@ -80,7 +83,7 @@ describe('reviewer durable Conversation Definition', () => {
     expect(data(replay)).toEqual({
       focus: '只看并发', status: 'completed',
       activities: [
-        { activityId: 'turn:main', kind: 'analysis', status: 'started' },
+        { activityId: 'item:reason', kind: 'analysis', status: 'started' },
         { activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test' },
       ],
       text: '## 结论\n\n发现一个问题。',
@@ -194,19 +197,41 @@ describe('ReviewerPanel', () => {
     expect(view.container.querySelector(`[data-state="${dot}"]`)).toBeTruthy()
   })
 
-  it('falls back from a missing activity detail to its public kind', () => {
+  it.each([
+    ['analysis', zh.analysis, en.analysis],
+    ['command', zh.command, en.command],
+    ['tool', zh.tool, en.tool],
+    ['web-search', zh.webSearch, en.webSearch],
+    ['file-change', zh.fileChange, en.fileChange],
+    ['message', zh.message, en.message],
+    ['other', zh.other, en.other],
+  ] as const)('localizes the %s activity kind when no detail is present', (kind, zhLabel, enLabel) => {
+    const panelData: ReviewerChatData = {
+      focus: '', status: 'running',
+      activities: [{ activityId: `item:${kind}`, kind, status: 'completed' }],
+    }
+    render(<ReviewerPanel {...panelProps(panelData)} />)
+    expect(screen.getByText(zhLabel)).toBeTruthy()
+    expect(screen.getByText(zh.done)).toBeTruthy()
+    cleanup()
+    render(<ReviewerPanel {...panelProps(panelData, en)} />)
+    expect(screen.getByText(enLabel)).toBeTruthy()
+    expect(screen.getByText(en.done)).toBeTruthy()
+  })
+
+  it('prefers a safe activity detail over its localized category', () => {
     render(<ReviewerPanel {...panelProps({
       focus: '', status: 'running',
-      activities: [{ activityId: 'item:tool', kind: 'tool', status: 'completed' }],
+      activities: [{ activityId: 'item:tool', kind: 'tool', status: 'completed', detail: 'github.search' }],
     })} />)
-    expect(screen.getByText('tool')).toBeTruthy()
-    expect(screen.getByText(zh.done)).toBeTruthy()
+    expect(screen.getByText('github.search')).toBeTruthy()
+    expect(screen.queryByText(zh.tool)).toBeNull()
   })
 
   it('labels a started activity as still in progress', () => {
     render(<ReviewerPanel {...panelProps({
       focus: '', status: 'running',
-      activities: [{ activityId: 'turn:main', kind: 'analysis', status: 'started' }],
+      activities: [{ activityId: 'item:reason', kind: 'analysis', status: 'started' }],
     })} />)
     expect(screen.getByText(zh.started)).toBeTruthy()
   })
@@ -216,7 +241,7 @@ describe('ReviewerPanel', () => {
     (status) => {
       render(<ReviewerPanel {...panelProps({
         focus: '', status,
-        activities: [{ activityId: 'turn:main', kind: 'analysis', status: 'started' }],
+        activities: [{ activityId: 'item:reason', kind: 'analysis', status: 'started' }],
       })} />)
       expect(screen.getByText(zh.stopped)).toBeTruthy()
       expect(screen.queryByText(zh.started)).toBeNull()

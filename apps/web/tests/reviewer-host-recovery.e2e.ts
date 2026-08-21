@@ -188,7 +188,7 @@ it.skipIf(process.platform !== 'win32')(
         'const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 60000)"], { detached: true, stdio: "ignore" })',
         `writeFileSync(${JSON.stringify(treePath)}, JSON.stringify({ root: process.pid, descendant: descendant.pid }))`,
         'descendant.unref()',
-        'process.stdout.write(`${JSON.stringify({ type: "turn.started" })}\\n`)',
+        'process.stdout.write(`${JSON.stringify({ type: "item.started", item: { id: "reason", type: "reasoning" } })}\\n`)',
         'setInterval(() => {}, 60000)',
         '',
       ].join('\n'))
