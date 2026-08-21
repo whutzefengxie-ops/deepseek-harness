@@ -240,6 +240,7 @@ it.skipIf(process.platform !== 'win32')(
       await waitForExit(firstHost)
       host = undefined
       await waitForTreeGone(tree)
+      tree = undefined
 
       await launchHost()
       await page.reload({ waitUntil: 'load' })

@@ -67,6 +67,9 @@ describe('web e2e: durable reviewer lifecycle', () => {
     await writeFile(reviewerOverlay, [
       '- id: command-reviewer',
       '  config:',
+      '    model: reviewer-composition-model',
+      '    prompt: Reviewer composition prompt.',
+      '    context: Reviewer composition context.',
       '    maxActivityEvents: 5',
       '',
     ].join('\n'))
@@ -122,6 +125,42 @@ describe('web e2e: durable reviewer lifecycle', () => {
       if (fakeCodexRoot !== undefined) await rm(fakeCodexRoot, { recursive: true, force: true })
     }
   })
+
+  it.skipIf(process.platform !== 'win32')(
+    'stores explicit empty Reviewer text overrides through the shipped settings card',
+    async () => {
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-empty-settings'))
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await settings.getByRole('button', { name: 'Plugins', exact: true }).click()
+      await expect.poll(
+        () => settings.getByRole('tab', { name: 'Plugin configuration', exact: true }).getAttribute('aria-selected'),
+        { timeout: 5_000 },
+      ).toBe('true')
+      await settings.getByRole('button', { name: 'Show settings: Reviewer', exact: true }).click()
+      const model = settings.getByLabel('Codex model', { exact: true })
+      const prompt = settings.getByLabel('Review prompt', { exact: true })
+      const context = settings.getByLabel('Scenario context', { exact: true })
+      await expect.poll(() => model.inputValue()).toBe('reviewer-composition-model')
+      await expect.poll(() => prompt.inputValue()).toBe('Reviewer composition prompt.')
+      await expect.poll(() => context.inputValue()).toBe('Reviewer composition context.')
+
+      await model.fill('')
+      await prompt.fill('')
+      await context.fill('')
+      await settings.getByRole('button', { name: 'Save', exact: true }).click()
+
+      await expect.poll(() => {
+        const descriptor = scaffold.ctx.settings.describe().find(item => item.ns === 'command-reviewer')
+        return { value: descriptor?.value, user: descriptor?.user }
+      }).toMatchObject({
+        value: { model: '', prompt: '', context: '' },
+        user: { model: '', prompt: '', context: '' },
+      })
+      await page.keyboard.press('Escape')
+    },
+    60_000,
+  )
 
   it.skipIf(process.platform !== 'win32')(
     'submits /review through Chromium and persists Windows Job-owned subprocess progress',

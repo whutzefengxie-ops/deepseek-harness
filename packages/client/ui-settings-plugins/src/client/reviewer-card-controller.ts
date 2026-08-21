@@ -53,11 +53,11 @@ export class ReviewerCardController {
   constructor(scope: SettingsScope<ReviewerSettings>) {
     this.form = new CardForm(scope, [
       boolField('enabled'),
-      textField('model', REVIEWER_MODEL_PATTERN),
+      textField('model', REVIEWER_MODEL_PATTERN, 'set'),
       selectField('thinkingEffort', ['low', 'medium', 'high']),
       selectField('sandbox', ['read-only', 'workspace-write', 'danger-full-access']),
-      textField('prompt'),
-      textField('context'),
+      textField('prompt', undefined, 'set'),
+      textField('context', undefined, 'set'),
     ])
     this.store = this.form.bind(() => this.projection())
   }

@@ -707,6 +707,44 @@ describe('ReviewerCardController', () => {
     expect(face.hooks.reviewerCard.getSnapshot().dirty).toBe(false)
   })
 
+  it('stores empty text over non-empty composition values until reset', async () => {
+    const host = stubSettingsScope<ReviewerSettings>()
+    acceptWrites(host)
+    const controller = new ReviewerCardController(host.scope)
+    host.publish({
+      status: 'ready',
+      writable: true,
+      value: { model: 'gpt-5.1-codex-max', prompt: 'Review carefully.', context: 'Deployment context.' },
+      base: { model: 'gpt-5.1-codex-max', prompt: 'Review carefully.', context: 'Deployment context.' },
+      user: {},
+    })
+    const face = controller.inject()
+
+    face.edit('model', '')
+    face.edit('prompt', '   ')
+    face.edit('context', '')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(3) })
+
+    expect(host.set.mock.calls).toEqual([['model', ''], ['prompt', ''], ['context', '']])
+    expect(host.scope.getSnapshot()).toMatchObject({
+      value: { model: '', prompt: '', context: '' },
+      user: { model: '', prompt: '', context: '' },
+    })
+    expect(face.hooks.reviewerCard.getSnapshot()).toMatchObject({
+      dirty: false,
+      model: { text: '', overridden: true },
+      prompt: { text: '', overridden: true },
+      context: { text: '', overridden: true },
+    })
+
+    face.resetField('context')
+    face.save()
+    await vi.waitFor(() => { expect(host.unset).toHaveBeenCalledWith('context') })
+    expect(face.hooks.reviewerCard.getSnapshot().context)
+      .toEqual({ text: 'Deployment context.', overridden: false, invalid: false })
+  })
+
   it('blocks a model identifier the Host schema would reject', async () => {
     const host = stubSettingsScope<ReviewerSettings>()
     const controller = new ReviewerCardController(host.scope)
