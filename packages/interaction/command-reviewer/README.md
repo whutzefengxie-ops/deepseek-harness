@@ -6,6 +6,8 @@ Human-facing `/review` control over the local Codex CLI. The plugin registers on
 
 ## Command contract
 
+The synthetic turn activity uses `turn:main`; every external Codex item id is stored as `item:<id>`, so untrusted item ids cannot collide with plugin-owned activity.
+
 | Input | Result |
 |---|---|
 | `/review` | Starts one Codex review of the conversation so far and immediately clears the submitting composer. |
@@ -84,5 +86,5 @@ None: no model request of the reviewed agent is involved, so no cached prefix is
 
 - **One run per invocation** — `/review` runs a single non-interactive `codex exec`; the review cannot be continued, resumed, or asked follow-up questions from inside the command.
 - **Transcript-only review surface** — instruction, catalog, and runtime-snapshot context, reasoning blocks, images, and attachments are not forwarded to Codex; the review sees conversation text, tool calls, and tool results.
-- **Codex presence is the host's job** — a missing or unauthenticated Codex install surfaces as the command's direct errors; the plugin performs no setup.
+- **Codex presence and authentication are the host's job** — a missing executable fails command admission directly; an authentication failure after spawn ends the durable Reviewer card as Failed. The plugin performs no setup.
 - **The shipped local Host-death guarantee is Windows-only** — the default Web profile omits `/review` on POSIX; an explicit POSIX composition needs a subprocess provider backed by cgroups, a supervisor, or another ownership mechanism that can contain daemonized descendants.

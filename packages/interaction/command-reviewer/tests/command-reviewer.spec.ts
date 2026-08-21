@@ -646,7 +646,7 @@ describe('/review durable background lifecycle', () => {
     ])
     expect(reviewEvents.filter(event => event.type === 'review/activity').map(event => event.data)).toContainEqual({
       commandId: execution.commandId,
-      activityId: 'command-1', kind: 'command', status: 'started', detail: 'git diff --check',
+      activityId: 'item:command-1', kind: 'command', status: 'started', detail: 'git diff --check',
     })
     expect(end.data.text).toBe('Review text.')
     expect(test.agent.session.deriveMessages()).toEqual(before)

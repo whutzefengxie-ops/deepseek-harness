@@ -140,52 +140,59 @@ describe('codexReviewLaunch', () => {
 })
 
 describe('parseCodexJsonLine', () => {
+  it('keeps synthetic turn activity separate from untrusted Codex item ids', () => {
+    expect(parseCodexJsonLine('{"type":"turn.started"}').activity?.activityId).toBe('turn:main')
+    expect(parseCodexJsonLine(JSON.stringify({
+      type: 'item.started', item: { id: 'turn', type: 'reasoning' },
+    })).activity?.activityId).toBe('item:turn')
+  })
+
   it('maps turn, command, tool, search, file, message, and unknown item events', () => {
     expect(parseCodexJsonLine('{"type":"turn.started"}')).toEqual({
-      activity: { activityId: 'turn', kind: 'analysis', status: 'started' },
+      activity: { activityId: 'turn:main', kind: 'analysis', status: 'started' },
     })
     expect(parseCodexJsonLine('{"type":"turn.completed"}')).toEqual({
-      activity: { activityId: 'turn', kind: 'analysis', status: 'completed' },
+      activity: { activityId: 'turn:main', kind: 'analysis', status: 'completed' },
     })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'reason', type: 'reasoning' },
     }))).toEqual({ activity: {
-      activityId: 'reason', kind: 'analysis', status: 'started',
+      activityId: 'item:reason', kind: 'analysis', status: 'started',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'command', type: 'command_execution', command: 'pnpm test' },
     }))).toEqual({ activity: {
-      activityId: 'command', kind: 'command', status: 'started', detail: 'pnpm test',
+      activityId: 'item:command', kind: 'command', status: 'started', detail: 'pnpm test',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.completed', item: { id: 'tool', type: 'mcp_tool_call', server: 'github', tool: 'search' },
     }))).toEqual({ activity: {
-      activityId: 'tool', kind: 'tool', status: 'completed', detail: 'github.search',
+      activityId: 'item:tool', kind: 'tool', status: 'completed', detail: 'github.search',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'tool-only', type: 'mcp_tool_call', tool: 'search' },
     }))).toEqual({ activity: {
-      activityId: 'tool-only', kind: 'tool', status: 'started', detail: 'search',
+      activityId: 'item:tool-only', kind: 'tool', status: 'started', detail: 'search',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'server-only', type: 'mcp_tool_call', server: 'github' },
     }))).toEqual({ activity: {
-      activityId: 'server-only', kind: 'tool', status: 'started', detail: 'github',
+      activityId: 'item:server-only', kind: 'tool', status: 'started', detail: 'github',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'tool-unspecified', type: 'mcp_tool_call' },
     }))).toEqual({ activity: {
-      activityId: 'tool-unspecified', kind: 'tool', status: 'started',
+      activityId: 'item:tool-unspecified', kind: 'tool', status: 'started',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.completed', item: { id: 'search', type: 'web_search', query: 'Codex JSONL' },
     }))).toEqual({ activity: {
-      activityId: 'search', kind: 'web-search', status: 'completed', detail: 'Codex JSONL',
+      activityId: 'item:search', kind: 'web-search', status: 'completed', detail: 'Codex JSONL',
     } })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.completed', item: { id: 'files', type: 'file_change', changes: [{ path: 'a.ts' }, { path: 'b.ts' }] },
     }))).toEqual({ activity: {
-      activityId: 'files', kind: 'file-change', status: 'completed', detail: 'a.ts, b.ts',
+      activityId: 'item:files', kind: 'file-change', status: 'completed', detail: 'a.ts, b.ts',
     } })
     for (const item of [
       { id: 'files-missing', type: 'file_change' },
@@ -193,19 +200,19 @@ describe('parseCodexJsonLine', () => {
       { id: 'files-invalid', type: 'file_change', changes: [null, [], 1, {}, { path: '' }] },
     ]) {
       expect(parseCodexJsonLine(JSON.stringify({ type: 'item.started', item }))).toEqual({ activity: {
-        activityId: item.id, kind: 'file-change', status: 'started',
+        activityId: `item:${item.id}`, kind: 'file-change', status: 'started',
       } })
     }
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.completed', item: { id: 'message', type: 'agent_message', text: 'Review' },
     }))).toEqual({
-      activity: { activityId: 'message', kind: 'message', status: 'completed' },
+      activity: { activityId: 'item:message', kind: 'message', status: 'completed' },
       finalText: 'Review',
     })
     expect(parseCodexJsonLine(JSON.stringify({
       type: 'item.started', item: { id: 'future', type: 'future_item' },
     }))).toEqual({ activity: {
-      activityId: 'future', kind: 'other', status: 'started', detail: 'future_item',
+      activityId: 'item:future', kind: 'other', status: 'started', detail: 'future_item',
     } })
   })
 
@@ -236,7 +243,7 @@ describe('parseCodexJsonLine', () => {
     expect(() => parseCodexJsonLine('{"type":"item.completed","item":{"id":"m","type":"agent_message","text":""}}'))
       .toThrow('Codex agent message text must be a non-empty string')
     expect(parseCodexJsonLine('{"type":"item.started","item":{"id":"m","type":"agent_message","text":"draft"}}'))
-      .toEqual({ activity: { activityId: 'm', kind: 'message', status: 'started' } })
+      .toEqual({ activity: { activityId: 'item:m', kind: 'message', status: 'started' } })
   })
 
   it('omits empty optional operation details', () => {
@@ -245,7 +252,7 @@ describe('parseCodexJsonLine', () => {
       { id: 'search', type: 'web_search', query: 1 },
     ]) {
       expect(parseCodexJsonLine(JSON.stringify({ type: 'item.started', item }))).toEqual({ activity: {
-        activityId: item.id,
+        activityId: `item:${item.id}`,
         kind: item.type === 'command_execution' ? 'command' : 'web-search',
         status: 'started',
       } })

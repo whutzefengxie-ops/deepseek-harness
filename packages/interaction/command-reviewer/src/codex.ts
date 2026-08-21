@@ -150,7 +150,7 @@ function itemActivity(
   item: Record<string, unknown>,
   status: ReviewActivityStatus,
 ): NonNullable<CodexJsonProgress['activity']> {
-  const activityId = stringValue(item.id, 'Codex item id')
+  const activityId = `item:${stringValue(item.id, 'Codex item id')}`
   const itemType = stringValue(item.type, 'Codex item type')
   let kind: ReviewActivityKind
   let detail: string | undefined
@@ -206,10 +206,10 @@ export function parseCodexJsonLine(line: string): CodexJsonProgress {
   const event = objectValue(parsed, 'Codex event')
   const type = stringValue(event.type, 'Codex event type')
   if (type === 'turn.started') {
-    return { activity: { activityId: 'turn', kind: 'analysis', status: 'started' } }
+    return { activity: { activityId: 'turn:main', kind: 'analysis', status: 'started' } }
   }
   if (type === 'turn.completed') {
-    return { activity: { activityId: 'turn', kind: 'analysis', status: 'completed' } }
+    return { activity: { activityId: 'turn:main', kind: 'analysis', status: 'completed' } }
   }
   if (type === 'turn.failed') return { failure: failureMessage(event.error) }
   if (type === 'error') return { failure: failureMessage(event.message ?? event.error) }

@@ -228,13 +228,18 @@ describe('built-in conversation node Definitions', () => {
     expect(node(snapshot(value), 'test-domain')?.visibility).toBe('visible')
   })
 
-  it('hides an already materialized command row when a visible domain Chat node takes over', () => {
+  it('hides an already materialized command row as soon as a domain Chat node claims its identity', () => {
     const value = assembler([
       at(1, 'command/run', { commandId: 'review-1', name: 'review', source: { kind: 'user' } }),
-    ], false, [...DEFINITIONS, DOMAIN_DEFINITION])
+    ], false, [...DEFINITIONS, PAGED_DOMAIN_DEFINITION])
     expect(node(snapshot(value), 'command')?.visibility).toBe('visible')
 
     value.append(at(10, 'review/start', { commandId: 'review-1' }))
+    value.flush()
+
+    expect(node(snapshot(value), 'command')?.visibility).toBe('hidden')
+    expect(node(snapshot(value), 'test-paged-domain')?.visibility).toBe('visible')
+
     value.append(at(11, 'command/done', { commandId: 'review-1', kind: 'success', sourceEventSeq: 10 }))
     value.flush()
 

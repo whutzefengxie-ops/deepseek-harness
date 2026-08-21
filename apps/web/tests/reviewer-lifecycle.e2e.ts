@@ -147,13 +147,13 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(persisted.events.filter(event => event.type === 'review/start')).toHaveLength(1)
       expect(persisted.events.filter(event => event.type === 'review/activity').map(event => event.data))
         .toMatchObject([
-          { activityId: 'turn', kind: 'analysis', status: 'started' },
-          { activityId: 'reason', kind: 'analysis', status: 'started' },
-          { activityId: 'reason', kind: 'analysis', status: 'completed' },
-          { activityId: 'command', kind: 'command', status: 'completed' },
-          { activityId: 'search', kind: 'web-search', status: 'completed' },
-          { activityId: 'message', kind: 'message', status: 'completed' },
-          { activityId: 'turn', kind: 'analysis', status: 'completed' },
+          { activityId: 'turn:main', kind: 'analysis', status: 'started' },
+          { activityId: 'item:reason', kind: 'analysis', status: 'started' },
+          { activityId: 'item:reason', kind: 'analysis', status: 'completed' },
+          { activityId: 'item:command', kind: 'command', status: 'completed' },
+          { activityId: 'item:search', kind: 'web-search', status: 'completed' },
+          { activityId: 'item:message', kind: 'message', status: 'completed' },
+          { activityId: 'turn:main', kind: 'analysis', status: 'completed' },
         ])
       expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
         data: { outcome: 'completed' },

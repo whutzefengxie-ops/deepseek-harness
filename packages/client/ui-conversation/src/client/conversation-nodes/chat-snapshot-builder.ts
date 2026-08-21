@@ -151,9 +151,9 @@ function domainAnchor(node: ChatConversationViewNode): number | undefined {
   return node.kind !== 'command' && node.visibility === 'visible' ? node.anchorSeq : undefined
 }
 
-function successfulCommandId(node: ChatConversationViewNode): CommandId | undefined {
+function commandId(node: ChatConversationViewNode): CommandId | undefined {
   const candidate = node as ChatNode
-  return candidate.kind === 'command' && candidate.data.outcome?.kind === 'success'
+  return candidate.kind === 'command'
     ? candidate.data.commandId
     : undefined
 }
@@ -219,7 +219,7 @@ class CommandPresentationProjector {
           removeIndexed(this.commands, previousSource, previous.key)
           affectedCommands.add(previous.key)
         }
-        const previousCommandId = successfulCommandId(previous)
+        const previousCommandId = commandId(previous)
         if (previousCommandId !== undefined) {
           removeIndexed(this.commandIds, previousCommandId, previous.key)
           affectedCommands.add(previous.key)
@@ -231,7 +231,7 @@ class CommandPresentationProjector {
       const nextDomainCommandId = domainCommandId(node)
       if (nextDomainCommandId !== undefined) affectedCommandIds.add(nextDomainCommandId)
       if (commandSourceSeq(node) !== undefined) affectedCommands.add(node.key)
-      if (successfulCommandId(node) !== undefined) affectedCommands.add(node.key)
+      if (commandId(node) !== undefined) affectedCommands.add(node.key)
     }
     for (const anchor of affectedAnchors) {
       for (const key of this.commands.get(anchor) ?? EMPTY_KEYS) affectedCommands.add(key)
@@ -253,16 +253,16 @@ class CommandPresentationProjector {
     if (domainId !== undefined) addIndexed(this.domainCommandIds, domainId, node.key)
     const source = commandSourceSeq(node)
     if (source !== undefined) addIndexed(this.commands, source, node.key)
-    const commandId = successfulCommandId(node)
-    if (commandId !== undefined) addIndexed(this.commandIds, commandId, node.key)
+    const id = commandId(node)
+    if (id !== undefined) addIndexed(this.commandIds, id, node.key)
   }
 
   private reconcile(node: ChatConversationViewNode): ChatConversationViewNode {
     const sourceSeq = commandSourceSeq(node)
-    const commandId = successfulCommandId(node)
-    if (sourceSeq === undefined && commandId === undefined) return node
+    const id = commandId(node)
+    if (sourceSeq === undefined && id === undefined) return node
     const claimedByAnchor = sourceSeq !== undefined && this.domains.has(sourceSeq)
-    const claimedByCommand = commandId !== undefined && this.domainCommandIds.has(commandId)
+    const claimedByCommand = id !== undefined && this.domainCommandIds.has(id)
     const visibility = claimedByAnchor || claimedByCommand ? 'hidden' : 'visible'
     return node.visibility === visibility ? node : { ...node, visibility }
   }
