@@ -9,6 +9,11 @@ import { delimiter, join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { expect, it, onTestFailed, vi } from 'vitest'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import { logPath } from '../../../packages/session/session-persistence-jsonl/src/format.ts'
+import {
+  decompressZstdFrame, scanZstdFrames,
+} from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import {
   REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot,
 } from './support.ts'
@@ -20,6 +25,11 @@ interface ManagedTree {
 
 interface HistoryPage {
   events: Array<{ event: { seq: number; type: string; data: unknown } }>
+}
+
+interface StoredEvent {
+  type: string
+  data: unknown
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,8 +131,23 @@ function eventsFor(history: HistoryPage, commandId: string, type: string): Array
   ))
 }
 
+async function readStoredEvents(path: string): Promise<StoredEvent[]> {
+  const encoded = await readFile(path)
+  const plaintext: Buffer[] = []
+  for (const frame of scanZstdFrames(encoded).frames) {
+    plaintext.push(await decompressZstdFrame(encoded.subarray(frame.start, frame.end)))
+  }
+  return Buffer.concat(plaintext).toString('utf8').split('\n').flatMap<StoredEvent>((line) => {
+    if (line.length === 0) return []
+    const value: unknown = JSON.parse(line)
+    return isRecord(value) && typeof value.type === 'string' && 'data' in value
+      ? [{ type: value.type, data: value.data }]
+      : []
+  })
+}
+
 it.skipIf(process.platform !== 'win32')(
-  'force-kills an admitted reviewer tree and recovers its persisted lifecycle exactly once',
+  'force-kills reviewer Hosts before and after admission and recovers each lifecycle exactly once',
   async () => {
     requireDist()
     const world = await mkdtemp(join(tmpdir(), 'dsh-reviewer-host-recovery-'))
@@ -141,8 +166,11 @@ it.skipIf(process.platform !== 'win32')(
     let tree: ManagedTree | undefined
     const cleanupFailures: unknown[] = []
 
-    const launchHost = async (): Promise<void> => {
-      host = spawn(process.execPath, [
+    const launchHost = async (options: {
+      pathExt?: string
+      pathPrefixes?: readonly string[]
+    } = {}): Promise<ChildProcess> => {
+      const launched = spawn(process.execPath, [
         binPath, 'web', '--patch', overlay, '--no-open', '--port', String(port),
       ], {
         cwd: REPO_ROOT,
@@ -152,11 +180,13 @@ it.skipIf(process.platform !== 'win32')(
           DEEPSEEK_BASE_URL: 'http://127.0.0.1:1',
           DSH_HOME: home,
           DSH_AGENTS_HOME: agentsHome,
-          PATH: `${fakeCodexRoot}${delimiter}${process.env.PATH ?? ''}`,
+          PATH: [...options.pathPrefixes ?? [], fakeCodexRoot, process.env.PATH ?? ''].join(delimiter),
+          ...(options.pathExt === undefined ? {} : { PATHEXT: options.pathExt }),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      expect(await waitForReadyLine(host)).toBe(baseUrl)
+      expect(await waitForReadyLine(launched)).toBe(baseUrl)
+      return launched
     }
 
     try {
@@ -197,7 +227,7 @@ it.skipIf(process.platform !== 'win32')(
         `@echo off\r\n"${process.execPath}" "%~dp0fake-codex.mjs" %*\r\n`,
       )
 
-      await launchHost()
+      host = await launchHost()
       browser = await chromium.launch()
       page = await newEnglishPage(browser)
       onTestFailed(() => { if (page !== undefined) void saveFailureShot(page, 'reviewer-host-recovery') })
@@ -214,6 +244,9 @@ it.skipIf(process.platform !== 'win32')(
       }, { interval: 50, timeout: 15_000 })
       const sessionId = sessions.items[0]?.sessionId
       if (sessionId === undefined) throw new Error('reviewer session was not listed')
+      const storedLog = logPath(
+        join(home, 'sessions'), join(workspaceRoot, 'workspace'), SessionId(sessionId), 'zstd',
+      )
       await vi.waitFor(async () => {
         const history = await rpc<HistoryPage>(baseUrl, 'session.history', { sessionId, maxMessages: 100 })
         if (!history.events.some(item => item.event.type === 'user/message')) {
@@ -242,7 +275,7 @@ it.skipIf(process.platform !== 'win32')(
       await waitForTreeGone(tree)
       tree = undefined
 
-      await launchHost()
+      host = await launchHost()
       await page.reload({ waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await page.locator('[data-reviewer][data-review-status="interrupted"]').waitFor({ timeout: 30_000 })
@@ -265,6 +298,97 @@ it.skipIf(process.platform !== 'win32')(
       const reloaded = await rpc<HistoryPage>(baseUrl, 'session.history', { sessionId, maxMessages: 100 })
       expect(eventsFor(reloaded, commandId, 'review/end')).toHaveLength(1)
       expect(eventsFor(reloaded, commandId, 'command/done')).toHaveLength(1)
+
+      const recoveredHost = host
+      if (recoveredHost === undefined || !recoveredHost.kill('SIGKILL')) {
+        throw new Error('failed to stop recovered reviewer Host')
+      }
+      await waitForExit(recoveredHost)
+      host = undefined
+      await rm(treePath, { force: true })
+
+      const delayedPathExt = [
+        ...Array.from({ length: 1_500 }, (_, index) => `.DSH${index.toString(36)}`),
+        '.CMD',
+      ].join(';')
+      const missingPathPrefixes = Array.from(
+        { length: 80 }, (_, index) => join(world, `missing-path-${index.toString(36)}`),
+      )
+      host = await launchHost({ pathExt: delayedPathExt, pathPrefixes: missingPathPrefixes })
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const delayedInput = page.locator('textarea:enabled').first()
+      await delayedInput.waitFor({ timeout: 15_000 })
+      await delayedInput.fill('/review verify pre-admission Host recovery')
+      void page.waitForResponse(response => response.url() === `${baseUrl}/api/commands/execute`).catch(() => {})
+      await delayedInput.press('Enter')
+
+      const persistedPrefix = await vi.waitFor(async () => {
+        const stored = await readStoredEvents(storedLog)
+        const run = stored.find(event => (
+          event.type === 'command/run'
+          && isRecord(event.data)
+          && event.data.name === 'review'
+          && typeof event.data.commandId === 'string'
+          && event.data.commandId !== commandId
+        ))
+        if (run === undefined || !isRecord(run.data) || typeof run.data.commandId !== 'string') {
+          throw new Error('pre-admission command/run is not present in a complete Zstandard frame')
+        }
+        const pendingCommandId = run.data.commandId
+        return {
+          commandId: pendingCommandId,
+          hasStart: stored.some(event => (
+            event.type === 'review/start'
+            && isRecord(event.data)
+            && event.data.commandId === pendingCommandId
+          )),
+          hasDone: stored.some(event => (
+            event.type === 'command/done'
+            && isRecord(event.data)
+            && event.data.commandId === pendingCommandId
+          )),
+        }
+      }, { interval: 5, timeout: 15_000 })
+      expect(persistedPrefix).toMatchObject({ hasStart: false, hasDone: false })
+
+      const admissionHost = host
+      if (admissionHost === undefined || !admissionHost.kill('SIGKILL')) {
+        throw new Error('failed to force-kill reviewer Host during admission')
+      }
+      await waitForExit(admissionHost)
+      host = undefined
+      await expect(readFile(treePath)).rejects.toMatchObject({ code: 'ENOENT' })
+
+      host = await launchHost()
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const admissionError = page.locator('[data-variant="others"][data-state="error"]').filter({
+        hasText: 'Review interrupted because its previous host stopped before recording admission.',
+      })
+      await admissionError.waitFor({ timeout: 30_000 })
+      expect(await page.locator('[data-reviewer]').count()).toBe(1)
+
+      const admissionRecovered = await rpc<HistoryPage>(baseUrl, 'session.history', {
+        sessionId, maxMessages: 100,
+      })
+      expect(eventsFor(admissionRecovered, persistedPrefix.commandId, 'review/start')).toHaveLength(0)
+      expect(eventsFor(admissionRecovered, persistedPrefix.commandId, 'review/end')).toHaveLength(0)
+      expect(eventsFor(admissionRecovered, persistedPrefix.commandId, 'command/done')).toMatchObject([{
+        data: {
+          kind: 'error',
+          text: 'Review interrupted because its previous host stopped before recording admission.',
+        },
+      }])
+
+      await page.reload({ waitUntil: 'load' })
+      await admissionError.waitFor({ timeout: 30_000 })
+      const admissionReloaded = await rpc<HistoryPage>(baseUrl, 'session.history', {
+        sessionId, maxMessages: 100,
+      })
+      expect(eventsFor(admissionReloaded, persistedPrefix.commandId, 'review/start')).toHaveLength(0)
+      expect(eventsFor(admissionReloaded, persistedPrefix.commandId, 'review/end')).toHaveLength(0)
+      expect(eventsFor(admissionReloaded, persistedPrefix.commandId, 'command/done')).toHaveLength(1)
     } finally {
       await browser?.close().catch((error: unknown) => cleanupFailures.push(error))
       if (host !== undefined && host.exitCode === null && host.signalCode === null) {

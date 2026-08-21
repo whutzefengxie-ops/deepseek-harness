@@ -1,0 +1,21 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Interrupted reviewer admission" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Preserve this command while reviewer admission is pending. {{clock}}
+- button "Copy":
+  - img
+- text: Failed review Review interrupted because its previous host stopped before recording admission.
+- textbox "Message the agent"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]

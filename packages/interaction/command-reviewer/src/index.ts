@@ -143,6 +143,7 @@ const NO_HISTORY: CommandResult = {
   text: 'No conversation output to review yet.',
 }
 const CANCELLED: CommandResult = { kind: 'error', text: 'Review cancelled.' }
+const INTERRUPTED_ADMISSION_TEXT = 'Review interrupted because its previous host stopped before recording admission.'
 const INTERRUPTED_REVIEW_TEXT = 'Review interrupted because its previous host stopped before recording completion.'
 const FORKED_REVIEW_TEXT = 'Review was not continued in this fork; the source session review is unaffected.'
 function assertConfig(config: Required<Config>): void {
@@ -254,15 +255,31 @@ async function flushReviewEnd(
   }
 }
 
+function inheritedByFork(session: Session, seq: number): boolean {
+  return session.header.parentSession !== undefined
+    && session.header.seedLength !== undefined
+    && seq < session.header.seedLength
+}
+
 /** Settle review and command prefixes whose owning Host is gone. */
 function recoverInterruptedReviews(agent: Agent): void {
+  const reviewRuns = new Map<ReviewStartData['commandId'], SessionEvent<'command/run'>>()
   const starts = new Map<ReviewStartData['commandId'], SessionEvent<'review/start'>>()
   const ended = new Set<ReviewStartData['commandId']>()
   const settledCommands = new Set<ReviewStartData['commandId']>()
   for (const event of agent.session.events) {
-    if (event.type === 'review/start') starts.set(event.data.commandId, event)
+    if (event.type === 'command/run' && event.data.name === 'review') reviewRuns.set(event.data.commandId, event)
+    else if (event.type === 'review/start') starts.set(event.data.commandId, event)
     else if (event.type === 'review/end') ended.add(event.data.commandId)
     else if (event.type === 'command/done') settledCommands.add(event.data.commandId)
+  }
+  for (const [commandId, run] of reviewRuns) {
+    if (settledCommands.has(commandId) || starts.has(commandId)) continue
+    agent.session.append('command/done', {
+      commandId,
+      kind: 'error',
+      text: inheritedByFork(agent.session, run.seq) ? FORKED_REVIEW_TEXT : INTERRUPTED_ADMISSION_TEXT,
+    })
   }
   for (const [commandId, start] of starts) {
     if (!settledCommands.has(commandId)) {
@@ -274,11 +291,7 @@ function recoverInterruptedReviews(agent: Agent): void {
     appendReviewEvent(agent.session, 'review/end', {
       commandId,
       outcome: 'interrupted',
-      text: agent.session.header.parentSession !== undefined
-        && agent.session.header.seedLength !== undefined
-        && start.seq < agent.session.header.seedLength
-        ? FORKED_REVIEW_TEXT
-        : INTERRUPTED_REVIEW_TEXT,
+      text: inheritedByFork(agent.session, start.seq) ? FORKED_REVIEW_TEXT : INTERRUPTED_REVIEW_TEXT,
     })
   }
 }

@@ -292,6 +292,34 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
 })
 
 describe('/review durable background lifecycle', () => {
+  it('settles a review command whose Host stopped before recording admission', async () => {
+    const test = await harness()
+    const commandId = CommandId('review-stopped-before-admission')
+    const unrelatedId = CommandId('unrelated-command-still-running')
+    test.agent.session.append('command/run', {
+      commandId, name: 'review', source: { kind: 'user' },
+    })
+    test.agent.session.append('command/run', {
+      commandId: unrelatedId, name: 'other', source: { kind: 'user' },
+    })
+
+    agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
+    agentEvents(test.ctx, test.agent).emit('agent/session-start', { source: 'resume' })
+
+    expect(test.agent.session.events.filter(event => event.type === 'command/done')).toMatchObject([{
+      data: {
+        commandId,
+        kind: 'error',
+        text: 'Review interrupted because its previous host stopped before recording admission.',
+      },
+    }])
+    expect(test.agent.session.events.some(event => (
+      event.type === 'command/done' && event.data.commandId === unrelatedId
+    ))).toBe(false)
+    expect(test.agent.session.events.some(event => event.type === 'review/start')).toBe(false)
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+  })
+
   it('settles both lifecycles when an admitted persisted review resumes before command acknowledgment', async () => {
     const test = await harness()
     const commandId = CommandId('review-from-stopped-host')
@@ -379,9 +407,10 @@ describe('/review durable background lifecycle', () => {
     }])
   })
 
-  it('closes an inherited open review in a fork without changing or blaming the source session', async () => {
+  it('settles inherited review prefixes in a fork without changing or blaming the source session', async () => {
     const test = await harness()
     const commandId = CommandId('review-active-during-fork')
+    const admissionCommandId = CommandId('review-admission-during-fork')
     test.agent.session.append('command/run', {
       commandId, name: 'review', args: ' inspect fork', source: { kind: 'user' },
     })
@@ -392,6 +421,9 @@ describe('/review durable background lifecycle', () => {
         prompt: 'review source work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(),
         hostDeath: 'terminate', timeoutMs: 1_800_000,
       },
+    })
+    test.agent.session.append('command/run', {
+      commandId: admissionCommandId, name: 'review', source: { kind: 'user' },
     })
     const seed = test.agent.session.events
     const childSession = test.ctx.sessions.create(SessionId('command-reviewer-fork'), {
@@ -408,6 +440,21 @@ describe('/review durable background lifecycle', () => {
     agentEvents(test.ctx, child).emit('agent/session-start', { source: 'startup' })
 
     expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    expect(test.agent.session.events.some(event => event.type === 'command/done')).toBe(false)
+    expect(childSession.events.filter(event => (
+      event.type === 'command/done' && event.data.commandId === admissionCommandId
+    ))).toMatchObject([{
+      data: {
+        kind: 'error',
+        text: 'Review was not continued in this fork; the source session review is unaffected.',
+      },
+    }])
+    expect(childSession.events.some(event => (
+      event.type === 'review/start' && event.data.commandId === admissionCommandId
+    ))).toBe(false)
+    expect(childSession.events.some(event => (
+      event.type === 'review/end' && event.data.commandId === admissionCommandId
+    ))).toBe(false)
     expect(childSession.events.findLast(event => event.type === 'review/end')?.data).toEqual({
       commandId,
       outcome: 'interrupted',

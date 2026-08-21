@@ -28,6 +28,10 @@ const RECOVERED_UI_EXPECTED = fileURLToPath(new URL(
   './snapshots/reviewer-lifecycle/recovered-terminal.expected.md',
   import.meta.url,
 ))
+const INTERRUPTED_ADMISSION_UI_EXPECTED = fileURLToPath(new URL(
+  './snapshots/reviewer-lifecycle/interrupted-admission.expected.md',
+  import.meta.url,
+))
 const MODE = webSnapshotMode()
 
 describe('web e2e: durable reviewer lifecycle', () => {
@@ -248,7 +252,9 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(scaffold.ctx.commands.list(agent).map(command => command.name)).not.toContain('review')
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
-      await assertFixtureInventory(SNAPSHOT_DIR, ['recovered-terminal.expected.md', 'ui.expected.md'])
+      await assertFixtureInventory(SNAPSHOT_DIR, [
+        'interrupted-admission.expected.md', 'recovered-terminal.expected.md', 'ui.expected.md',
+      ])
     },
     90_000,
   )
@@ -265,10 +271,78 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
-      await assertFixtureInventory(SNAPSHOT_DIR, ['recovered-terminal.expected.md', 'ui.expected.md'])
+      await assertFixtureInventory(SNAPSHOT_DIR, [
+        'interrupted-admission.expected.md', 'recovered-terminal.expected.md', 'ui.expected.md',
+      ])
     },
     90_000,
   )
+
+  it.skipIf(process.platform !== 'win32')('settles a persisted review command interrupted before admission', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-interrupted-admission'))
+    const sessionId = SessionId('reviewer-interrupted-admission-web-e2e')
+    const cwd = join(scaffold.workspaceCwd, 'workspace')
+    const workspace = await scaffold.ctx.workspaceRegistry.resolveByPath(cwd)
+    if (workspace === undefined) throw new Error('connected Web workspace was not registered')
+
+    const original = await scaffold.ctx.agents.create({ sessionId, meta: { cwd } })
+    const commandId = CommandId('review-interrupted-before-admission')
+    original.agent.session.append('turn/start', { turn: 1 })
+    const user = original.agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Preserve this command while reviewer admission is pending.' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    original.agent.session.append('session/title', {
+      title: 'Interrupted reviewer admission', messageSeqs: [user.seq], source: { kind: 'fallback' },
+    })
+    original.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    original.agent.session.append('command/run', {
+      commandId, name: 'review', source: { kind: 'user' },
+    })
+    await expect(scaffold.ctx.sessions.flush(original.agent.session)).resolves.toBe(true)
+    await workspace.attachSession(sessionId)
+    await original.dispose()
+
+    const resumed = await scaffold.ctx.agents.resume({ resumeSessionId: sessionId })
+    try {
+      expect(resumed.agent.session.events.filter(event => (
+        event.type === 'command/done' && event.data.commandId === commandId
+      ))).toEqual([expect.objectContaining({
+        data: {
+          commandId,
+          kind: 'error',
+          text: 'Review interrupted because its previous host stopped before recording admission.',
+        },
+      })])
+      expect(resumed.agent.session.events.some(event => event.type === 'review/start')).toBe(false)
+      expect(resumed.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+      await expect(scaffold.ctx.sessions.flush(resumed.agent.session)).resolves.toBe(true)
+
+      const persisted = await scaffold.ctx.sessionPersistence.inspect(sessionId)
+      expect(persisted.events.filter(event => (
+        event.type === 'command/done' && event.data.commandId === commandId
+      ))).toHaveLength(1)
+      expect(persisted.events.some(event => event.type === 'review/start')).toBe(false)
+      expect(persisted.events.some(event => event.type === 'review/end')).toBe(false)
+
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const row = page.getByRole('treeitem', { name: /Interrupted reviewer admission/ })
+      await row.waitFor({ timeout: 15_000 })
+      await row.click()
+      const error = page.locator('[data-variant="others"][data-state="error"]').filter({
+        hasText: 'Review interrupted because its previous host stopped before recording admission.',
+      })
+      await error.waitFor({ timeout: 15_000 })
+      expect(await error.getByText('review', { exact: true }).count()).toBe(1)
+      expect(await page.locator('[data-reviewer]').count()).toBe(0)
+      expect(await page.locator('[data-command-input]').count()).toBe(0)
+      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(INTERRUPTED_ADMISSION_UI_EXPECTED, snapshot, MODE)
+    } finally {
+      await resumed.dispose()
+    }
+  }, 120_000)
 
   it.skipIf(process.platform !== 'win32')('closes a persisted open review when its Agent resumes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-interrupted-resume'))
