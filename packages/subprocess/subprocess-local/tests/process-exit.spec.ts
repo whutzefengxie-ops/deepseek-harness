@@ -16,6 +16,7 @@ interface TreeState { root: number; descendant: number }
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', import.meta.url))
 const scenarioTimeoutMs = 30_000
+const guardianHostDeath = process.platform === 'win32' ? 'terminate' : 'allow'
 
 function processExists(pid: number): boolean {
   try {
@@ -188,7 +189,7 @@ describe('parent-death guardian command transport', () => {
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       },
-      hostDeath: 'terminate',
+      hostDeath: guardianHostDeath,
       graceMs: 100,
     })
 
@@ -205,7 +206,7 @@ describe('parent-death guardian command transport', () => {
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       },
-      hostDeath: 'terminate',
+      hostDeath: guardianHostDeath,
       graceMs: 100,
     })
 
@@ -225,7 +226,7 @@ describe('parent-death guardian command transport', () => {
         stdout: { maxBytes: 1_024 },
         stderr: { maxBytes: 1_024 },
       },
-      hostDeath: 'terminate',
+      hostDeath: guardianHostDeath,
       graceMs: 100,
     })
 

@@ -26,7 +26,7 @@ Normal disposal remains the [subprocess seam's](../architecture/2026-07-26-subpr
 | --- | --- | --- |
 | Normal Cordis disposal | Cooperative termination, bounded escalation, and awaited ordinary/terminal cleanup | Every owned handle reaches quiescence before disposal settles |
 | `process.exit()`, default uncaught exception, or default unhandled rejection | Synchronous final signals against the service's current live sets | External observation after the host exits |
-| Host failure that cannot execute JavaScript | The [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) and Windows kill-on-close Job terminate ordinary ignored-stdin and batch trees; other process forms cannot run an in-process action | External observation proves guarded-tree exit; raw stdin pipes, terminals, and packaged runtimes still require a signal handler, supervisor, container, or OS ownership |
+| Host failure that cannot execute JavaScript | The [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) attempts POSIX process-group cleanup; the Windows kill-on-close Job owns all descendants | Windows Job exit proves containment; POSIX no-survivor requirements, raw stdin pipes, terminals, and packaged runtimes need a supervisor, container, or OS ownership |
 
 ## Verification
 
@@ -42,10 +42,10 @@ Unit evidence pins synchronous POSIX group, guarded Windows Job, and direct Wind
 
 **Add a public raw `forceKill()` operation to subprocess handles.** Rejected because consumers need one cooperative termination contract. Immediate final termination is an implementation responsibility used only by the local service's host-exit owner.
 
-**Delegate every failure mode to an external supervisor.** Rejected as the only solution because Node exposes a reliable synchronous callback for several common fatal paths and the provider already owns the exact targets. The [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) covers ordinary ignored-stdin and batch commands when JavaScript cannot run; excluded process forms still require external ownership.
+**Delegate every failure mode to an external supervisor.** Rejected as the only solution because Node exposes a reliable synchronous callback for several common fatal paths and the provider already owns the exact targets. When JavaScript cannot run, the [parent-death guardian](2026-08-20-parent-death-guardian-for-batch-subprocesses.md) provides best-effort POSIX group cleanup and strong Windows Job containment; POSIX no-survivor requirements and excluded process forms still require external ownership.
 
 ## Consequences
 
 Each active local subprocess service contributes one process-global exit listener, removed with the service effect. Fatal exit gives up grace, output draining, and an in-process quiescence proof in exchange for issuing the strongest available local termination before the host disappears. Normal disposal keeps those guarantees and costs unchanged.
 
-The listener itself cannot cover failures that do not execute JavaScript. The parent-death guardian covers ordinary ignored-stdin and batch commands; raw stdin pipes, terminal sessions, packaged runtimes, and terminal descendants that escaped before observation retain the documented external-ownership requirement. The terminal escape gap remains tracked by Issue #1726.
+The listener itself cannot cover failures that do not execute JavaScript. The parent-death guardian attempts cleanup for ordinary ignored-stdin and batch commands, while only Windows Job ownership admits the no-survivor guarantee. POSIX recovery-sensitive commands, raw stdin pipes, terminal sessions, packaged runtimes, and terminal descendants that escaped before observation retain the documented external-ownership requirement. The terminal escape gap remains tracked by Issue #1726.

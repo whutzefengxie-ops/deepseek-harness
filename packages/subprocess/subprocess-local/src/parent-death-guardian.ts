@@ -1,6 +1,7 @@
 /**
- * Inline Node program that keeps one spawned command inside a process tree
- * whose lifetime is tied to the Harness host's private control pipe.
+ * Inline Node program that observes the Harness Host's private control pipe
+ * and terminates its managed process group when ownership is lost. Windows
+ * additionally uses kernel Job ownership to contain every descendant.
  * @module dsh-subprocess-local/parent-death-guardian
  */
 
@@ -8,7 +9,7 @@
  * Guardian source passed to the current Node executable through `-e`. The
  * parent writes one JSON launch line to stdin and keeps that pipe open. EOF means
  * the parent can no longer own cleanup, so the guardian force-stops the actual
- * command tree before exiting. fd 3 reports only actual-command spawn errors;
+ * command group before exiting. fd 3 reports only actual-command spawn errors;
  * stdout and stderr remain byte-exact command streams.
  */
 export const PARENT_DEATH_GUARDIAN_SOURCE = String.raw`

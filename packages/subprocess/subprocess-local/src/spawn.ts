@@ -332,8 +332,11 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
   if (!Number.isFinite(spec.graceMs) || spec.graceMs <= 0 || spec.graceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`subprocess graceMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`)
   }
-  const spillDir = internals.spillDir ?? privateSpillDir()
   const platform = internals.platform ?? process.platform
+  if (spec.hostDeath === 'terminate' && platform !== 'win32') {
+    throw new Error('subprocess-local: host-death termination requires Windows Job Object ownership')
+  }
+  const spillDir = internals.spillDir ?? privateSpillDir()
   const taskkill = internals.taskkill ?? taskkillProcessTree
   const linuxGroupHasLiveMembers = internals.linuxProcessGroupHasLiveMembers ?? linuxProcessGroupHasLiveMembers
 

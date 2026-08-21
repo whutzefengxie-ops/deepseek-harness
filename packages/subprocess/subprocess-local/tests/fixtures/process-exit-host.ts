@@ -40,7 +40,7 @@ if (kind === 'ordinary') {
       stdout: { maxBytes: 1024 },
       stderr: { maxBytes: 1024 },
     },
-    hostDeath: 'terminate',
+    hostDeath: process.platform === 'win32' ? 'terminate' : 'allow',
     graceMs: trigger === 'dispose' ? 100 : 30_000,
   })
 } else {

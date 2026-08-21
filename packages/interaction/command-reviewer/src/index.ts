@@ -129,6 +129,7 @@ const NO_HISTORY: CommandResult = {
 }
 const CANCELLED: CommandResult = { kind: 'error', text: 'Review cancelled.' }
 const INTERRUPTED_REVIEW_TEXT = 'Review interrupted because its previous host stopped before recording completion.'
+const FORKED_REVIEW_TEXT = 'Review was not continued in this fork; the source session review is unaffected.'
 function assertConfig(config: Required<Config>): void {
   if (config.terminateGraceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
@@ -184,7 +185,11 @@ function recoverInterruptedReviews(agent: Agent): void {
     appendReviewEvent(agent.session, 'review/end', {
       commandId,
       outcome: 'interrupted',
-      text: INTERRUPTED_REVIEW_TEXT,
+      text: agent.session.header.parentSession !== undefined
+        && agent.session.header.seedLength !== undefined
+        && start.seq < agent.session.header.seedLength
+        ? FORKED_REVIEW_TEXT
+        : INTERRUPTED_REVIEW_TEXT,
     })
   }
 }
@@ -334,7 +339,11 @@ async function confirmProcessTreeExit(handle: SubprocessHandle): Promise<void> {
   }
 }
 
-function renderFailedReview(diagnostics: readonly string[]): string {
+function renderFailedReview(completedText: string, diagnostics: readonly string[]): string {
+  if (completedText.length > 0) {
+    return `${completedText}\n\nThe review produced output but did not finish cleanly:\n${diagnostics
+      .map(diagnostic => `- ${diagnostic}`).join('\n')}`
+  }
   if (diagnostics.length === 1) return `The review failed: ${diagnostics[0]}`
   return `The review failed:\n${diagnostics.map(diagnostic => `- ${diagnostic}`).join('\n')}`
 }
@@ -412,7 +421,7 @@ async function runReview(
     ? { commandId, outcome: 'cancelled', text: renderCancelledReview(diagnostics) }
     : diagnostics.length === 0
       ? { commandId, outcome: 'completed', text: completedText }
-      : { commandId, outcome: 'failed', text: renderFailedReview(diagnostics) }
+      : { commandId, outcome: 'failed', text: renderFailedReview(completedText, diagnostics) }
   appendReviewEvent(session, 'review/end', end)
   await flushReviewLifecycle(ctx, session)
 }

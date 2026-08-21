@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -175,7 +176,17 @@ describe('spawnSubprocess', () => {
     expect(() => spawnSubprocess(spec('true', {
       hostDeath: 'terminate',
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
-    }))).toThrow('host-death termination requires a non-packaged ignore or batch stdin spawn')
+    }), { platform: 'win32' })).toThrow('host-death termination requires a non-packaged ignore or batch stdin spawn')
+  })
+
+  it('rejects required Host-death termination on POSIX before the target starts', () => {
+    const marker = join(spillDir, `posix-host-death-target-${randomUUID()}`)
+    expect(() => spawnSubprocess({
+      ...spec('unused'),
+      argv: [process.execPath, '-e', 'require("node:fs").writeFileSync(process.argv[1], "started")', marker],
+      hostDeath: 'terminate',
+    }, { platform: 'linux' })).toThrow('host-death termination requires Windows Job Object ownership')
+    expect(existsSync(marker)).toBe(false)
   })
 
   it.skipIf(process.platform !== 'win32')('reports a Job termination failure through the awaited exit observation', async () => {

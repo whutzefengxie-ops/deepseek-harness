@@ -292,6 +292,42 @@ describe('/review durable background lifecycle', () => {
     ))).toHaveLength(1)
   })
 
+  it('closes an inherited open review in a fork without changing or blaming the source session', async () => {
+    const test = await harness()
+    const commandId = CommandId('review-active-during-fork')
+    test.agent.session.append('command/run', {
+      commandId, name: 'review', args: ' inspect fork', source: { kind: 'user' },
+    })
+    test.agent.session.append('review/start', {
+      commandId,
+      focus: 'inspect fork',
+      request: {
+        prompt: 'review source work', argv: ['/resolved/codex', 'exec'], cwd: process.cwd(),
+        hostDeath: 'terminate', timeoutMs: 1_800_000,
+      },
+    })
+    const seed = test.agent.session.events
+    const childSession = test.ctx.sessions.create(SessionId('command-reviewer-fork'), {
+      seed,
+      meta: {
+        parentSession: test.agent.session.id,
+        seedLength: seed.length,
+      },
+    })
+    const child = {
+      id: childSession.id, session: childSession, ctx: test.ctx, status: 'idle', options: {},
+    } as unknown as Agent
+
+    agentEvents(test.ctx, child).emit('agent/session-start', { source: 'startup' })
+
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    expect(childSession.events.findLast(event => event.type === 'review/end')?.data).toEqual({
+      commandId,
+      outcome: 'interrupted',
+      text: 'Review was not continued in this fork; the source session review is unaffected.',
+    })
+  })
+
   it('returns after starting instead of waiting for Codex', async () => {
     const test = await harness({ cwd: 'C:\\work\\repo' })
     seed(test)
@@ -570,6 +606,29 @@ describe('/review durable background lifecycle', () => {
     })
   })
 
+  it('preserves final review text when Codex reports an error and exits nonzero', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = `${reviewJson('Useful review findings.')}${JSON.stringify({
+      type: 'error', message: 'stream closed after the final message',
+    })}\n`
+    test.subprocess.nextOutcome = { exitCode: 7, signal: null }
+
+    const execution = await run(test)
+
+    expect((await reviewEnd(test)).data).toEqual({
+      commandId: execution.commandId,
+      outcome: 'failed',
+      text: [
+        'Useful review findings.',
+        '',
+        'The review produced output but did not finish cleanly:',
+        '- Codex reported: stream closed after the final message',
+        '- Codex exited with code 7.',
+      ].join('\n'),
+    })
+  })
+
   it('reports every structured Codex failure in arrival order', async () => {
     const test = await harness()
     seed(test)
@@ -605,6 +664,20 @@ describe('/review durable background lifecycle', () => {
     expect(text).toContain('Codex reported: request already failed')
     expect(text).toContain('Codex output failed: invalid JSON')
     expect(text).toContain('Codex exited with code 2.')
+  })
+
+  it('preserves final review text decoded before malformed JSONL', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.nextStdout = `${reviewJson('Useful partial findings.')}{bad}\n`
+
+    await run(test)
+
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toContain('Useful partial findings.')
+    expect(end.data.text).toContain('The review produced output but did not finish cleanly:')
+    expect(end.data.text).toContain('Codex output failed: invalid JSON')
   })
 
   it('combines output overflow with signal termination', async () => {

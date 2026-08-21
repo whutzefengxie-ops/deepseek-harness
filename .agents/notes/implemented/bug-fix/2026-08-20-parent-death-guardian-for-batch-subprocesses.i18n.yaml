@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-parent-death-guardian-for-batch-subprocesses.md
-2026-08-20-parent-death-guardian-for-batch-subprocesses.md: af621ebd09509288dd9c0e2e95eaddb2e53b7500
-2026-08-20-parent-death-guardian-for-batch-subprocesses.zh.md: 37d87a0233fcd67f1f4ff7a2a7d6ec2863fa0856
+2026-08-20-parent-death-guardian-for-batch-subprocesses.md: 95ffa411ec43f36d16ff2fbc12a74a2d0beee614
+2026-08-20-parent-death-guardian-for-batch-subprocesses.zh.md: ca11125416f06af731f3bbbce7af8c85e507b4b9
