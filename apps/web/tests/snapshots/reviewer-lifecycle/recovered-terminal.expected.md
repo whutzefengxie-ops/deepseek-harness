@@ -10,7 +10,7 @@
 - text: Restore the completed review without a duplicate command row. {{clock}}
 - button "Copy":
   - img
-- text: Review Completed check terminal acknowledgement recovery
+- text: Review Completed check terminal acknowledgement recovery analysis stopped
 - paragraph: Terminal review survived the acknowledgement gap.
 - textbox "Message the agent"
 - button "Commands":

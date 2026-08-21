@@ -69,9 +69,9 @@ function match(seq: number, type: string, eventData: unknown) {
 describe('reviewer durable Conversation Definition', () => {
   const lifecycle = [
     at(1, 'review/start', { commandId: 'cmd-1', focus: '只看并发' }),
-    at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'turn', kind: 'analysis', status: 'started' }),
-    at(3, 'review/activity', { commandId: 'cmd-1', activityId: 'command', kind: 'command', status: 'started', detail: 'pnpm test' }),
-    at(4, 'review/activity', { commandId: 'cmd-1', activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test' }),
+    at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'turn:main', kind: 'analysis', status: 'started' }),
+    at(3, 'review/activity', { commandId: 'cmd-1', activityId: 'item:command', kind: 'command', status: 'started', detail: 'pnpm test' }),
+    at(4, 'review/activity', { commandId: 'cmd-1', activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test' }),
     at(5, 'review/end', { commandId: 'cmd-1', outcome: 'completed', text: '## 结论\n\n发现一个问题。' }),
   ]
 
@@ -80,8 +80,8 @@ describe('reviewer durable Conversation Definition', () => {
     expect(data(replay)).toEqual({
       focus: '只看并发', status: 'completed',
       activities: [
-        { activityId: 'turn', kind: 'analysis', status: 'started' },
-        { activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test' },
+        { activityId: 'turn:main', kind: 'analysis', status: 'started' },
+        { activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test' },
       ],
       text: '## 结论\n\n发现一个问题。',
     })
@@ -101,14 +101,14 @@ describe('reviewer durable Conversation Definition', () => {
   it('restores a paged terminal card before review/start is loaded', () => {
     const value = assemble([
       at(8, 'review/activity', {
-        commandId: 'cmd-1', activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test',
+        commandId: 'cmd-1', activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test',
       }),
       at(9, 'review/end', { commandId: 'cmd-1', outcome: 'completed', text: 'Paged result.' }),
     ])
     expect(data(value)).toEqual({
       focus: '',
       status: 'completed',
-      activities: [{ activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test' }],
+      activities: [{ activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test' }],
       text: 'Paged result.',
     })
     expect(reviewerNode(value)?.presentationCommandId).toBe('cmd-1')
@@ -122,7 +122,7 @@ describe('reviewer durable Conversation Definition', () => {
   it('ignores unrelated events and rejects an invalid direct start call', () => {
     expect(reviewerDefinition.match(at(1, 'turn/start', { turn: 1 }).event)).toBeNull()
     const invalid = match(1, 'review/activity', {
-      commandId: 'cmd-1', activityId: 'a', kind: 'analysis', status: 'started',
+      commandId: 'cmd-1', activityId: 'item:a', kind: 'analysis', status: 'started',
     })
     const context = {
       key: 'reviewer:cmd-1', kind: 'reviewer', id: 'cmd-1',
@@ -157,7 +157,7 @@ describe('ReviewerPanel', () => {
       location: { kind: 'unresolved' }, visibility: 'visible',
       data: data(assemble([
         at(1, 'review/start', { commandId: 'cmd-1', focus: '审查代码' }),
-        at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'c1', kind: 'command', status: 'completed', detail: 'git diff' }),
+        at(2, 'review/activity', { commandId: 'cmd-1', activityId: 'item:c1', kind: 'command', status: 'completed', detail: 'git diff' }),
         at(3, 'review/end', { commandId: 'cmd-1', outcome: 'completed', text: '**没有阻塞问题**' }),
       ]))!,
     }
@@ -197,7 +197,7 @@ describe('ReviewerPanel', () => {
   it('falls back from a missing activity detail to its public kind', () => {
     render(<ReviewerPanel {...panelProps({
       focus: '', status: 'running',
-      activities: [{ activityId: 'tool', kind: 'tool', status: 'completed' }],
+      activities: [{ activityId: 'item:tool', kind: 'tool', status: 'completed' }],
     })} />)
     expect(screen.getByText('tool')).toBeTruthy()
     expect(screen.getByText(zh.done)).toBeTruthy()
@@ -206,10 +206,22 @@ describe('ReviewerPanel', () => {
   it('labels a started activity as still in progress', () => {
     render(<ReviewerPanel {...panelProps({
       focus: '', status: 'running',
-      activities: [{ activityId: 'analysis', kind: 'analysis', status: 'started' }],
+      activities: [{ activityId: 'turn:main', kind: 'analysis', status: 'started' }],
     })} />)
     expect(screen.getByText(zh.started)).toBeTruthy()
   })
+
+  it.each(['completed', 'failed', 'cancelled', 'interrupted'] as const)(
+    'labels an unfinished activity as stopped after a %s result',
+    (status) => {
+      render(<ReviewerPanel {...panelProps({
+        focus: '', status,
+        activities: [{ activityId: 'turn:main', kind: 'analysis', status: 'started' }],
+      })} />)
+      expect(screen.getByText(zh.stopped)).toBeTruthy()
+      expect(screen.queryByText(zh.started)).toBeNull()
+    },
+  )
 })
 
 describe('reviewer plugin lifecycle', () => {

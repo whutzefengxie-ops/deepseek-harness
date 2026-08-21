@@ -64,7 +64,7 @@ The producer injects `commands`, `sessions`, `sessionPersistence`, and `subproce
   name: '@deepseek-ai/dsh-command-reviewer'
 ```
 
-The shipped Web composition mounts it on the Windows host plane beside the command registry, and `@deepseek-ai/dsh-client-ui-settings-plugins` contributes the settings card. POSIX omits that row because the shipped provider cannot satisfy its Host-death requirement; deployments with an equivalent provider may compose the package explicitly. The Codex CLI itself must be installed and authenticated on the host (`codex` on `PATH`); this plugin neither installs nor authenticates it.
+The shipped Web composition mounts it on the Windows host plane beside the command registry, and `@deepseek-ai/dsh-client-ui-settings-plugins` contributes the settings card. POSIX omits that row because the shipped provider cannot satisfy its Host-death requirement; deployments with an equivalent provider may compose the package explicitly. The Codex CLI itself must be installed on the host (`codex` on `PATH`) and authenticated through its persistent login in the subprocess provider's execution world; this plugin neither installs nor authenticates it. Ambient variables whose names contain `KEY`, `TOKEN`, `SECRET`, or `PASSWORD` are removed by the local subprocess provider, and this plugin does not authorize API credentials into the child environment.
 
 ## Model Experience
 
@@ -86,5 +86,5 @@ None: no model request of the reviewed agent is involved, so no cached prefix is
 
 - **One run per invocation** — `/review` runs a single non-interactive `codex exec`; the review cannot be continued, resumed, or asked follow-up questions from inside the command.
 - **Transcript-only review surface** — instruction, catalog, and runtime-snapshot context, reasoning blocks, images, and attachments are not forwarded to Codex; the review sees conversation text, tool calls, and tool results.
-- **Codex presence and authentication are the host's job** — a missing executable fails command admission directly; an authentication failure after spawn ends the durable Reviewer card as Failed. The plugin performs no setup.
+- **Codex presence and persistent login are deployment prerequisites** — a missing executable fails command admission directly; an authentication failure after spawn ends the durable Reviewer card as Failed. Authentication that exists only in an ambient API-key environment variable is unavailable to the shipped local subprocess provider because its secret-variable scrub removes that value.
 - **The shipped local Host-death guarantee is Windows-only** — the default Web profile omits `/review` on POSIX; an explicit POSIX composition needs a subprocess provider backed by cgroups, a supervisor, or another ownership mechanism that can contain daemonized descendants.

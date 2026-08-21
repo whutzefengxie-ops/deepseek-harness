@@ -197,14 +197,14 @@ describe('command-reviewer durable invariant', () => {
       const commandId = CommandId('activity-id')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: '', kind: 'analysis', status: 'started',
+        commandId, activityId: '' as never, kind: 'analysis', status: 'started',
       })
     }, /activityId must be a non-empty string/],
     ['invalid activity namespace', (session: Session) => {
       const commandId = CommandId('activity-namespace')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: 'turn', kind: 'analysis', status: 'started',
+        commandId, activityId: 'turn' as never, kind: 'analysis', status: 'started',
       })
     }, /activityId must be turn:main or item:<external id>/],
     ['empty external activity id', (session: Session) => {

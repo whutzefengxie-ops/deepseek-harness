@@ -6,7 +6,7 @@ import type { ReviewActivityData, ReviewEndData, ReviewStartData } from '@deepse
 
 /** One durable public Codex activity projected into the review card. */
 export interface ReviewerActivity {
-  readonly activityId: string
+  readonly activityId: ReviewActivityData['activityId']
   readonly kind: ReviewActivityData['kind']
   readonly status: ReviewActivityData['status']
   readonly detail?: string

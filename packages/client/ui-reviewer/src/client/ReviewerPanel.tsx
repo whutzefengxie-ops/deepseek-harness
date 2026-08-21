@@ -18,6 +18,14 @@ function dotState(status: ReviewerChatData['status']): StateDotState {
   if (status === 'failed') return 'error'
   return 'warning'
 }
+function activityStatusText(
+  activityStatus: ReviewerChatData['activities'][number]['status'],
+  reviewStatus: ReviewerChatData['status'],
+  t: Props['t'],
+): string {
+  if (activityStatus === 'completed') return t('done')
+  return reviewStatus === 'running' ? t('started') : t('stopped')
+}
 
 /** Render one replayable review lifecycle and its final Markdown. */
 export function ReviewerPanel({ node, t }: Props) {
@@ -33,7 +41,7 @@ export function ReviewerPanel({ node, t }: Props) {
       {data.activities.length > 0
         ? data.activities.map(activity => <div className={css.activity} key={activity.activityId}>
           <span>{activity.detail ?? activity.kind}</span>
-          <span className={css.activityStatus}>{activity.status === 'started' ? t('started') : t('done')}</span>
+          <span className={css.activityStatus}>{activityStatusText(activity.status, data.status, t)}</span>
         </div>)
         : data.status === 'running' && <span className={css.empty}>{t('empty')}</span>}
     </div>

@@ -7,7 +7,7 @@
 
 import type { Message } from '@deepseek-ai/dsh-llm'
 import type {
-  ReviewActivityKind, ReviewActivityStatus,
+  ReviewActivityId, ReviewActivityKind, ReviewActivityStatus,
 } from './types.ts'
 
 /** Sandbox modes accepted by `codex exec --sandbox`. */
@@ -100,7 +100,7 @@ export function codexNeedsCommandInterpreter(executable: string): boolean {
 /** Progress and terminal facts decoded from one supported Codex JSONL event. */
 export interface CodexJsonProgress {
   readonly activity?: {
-    readonly activityId: string
+    readonly activityId: ReviewActivityId
     readonly kind: ReviewActivityKind
     readonly status: ReviewActivityStatus
     readonly detail?: string
@@ -150,7 +150,7 @@ function itemActivity(
   item: Record<string, unknown>,
   status: ReviewActivityStatus,
 ): NonNullable<CodexJsonProgress['activity']> {
-  const activityId = `item:${stringValue(item.id, 'Codex item id')}`
+  const activityId: ReviewActivityId = `item:${stringValue(item.id, 'Codex item id')}`
   const itemType = stringValue(item.type, 'Codex item type')
   let kind: ReviewActivityKind
   let detail: string | undefined

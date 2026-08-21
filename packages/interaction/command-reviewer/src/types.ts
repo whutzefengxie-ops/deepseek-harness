@@ -18,6 +18,9 @@ export type ReviewActivityKind =
 /** Lifecycle state of one progress item. */
 export type ReviewActivityStatus = 'started' | 'completed'
 
+/** Plugin-owned turn identity or one namespaced external Codex item identity. */
+export type ReviewActivityId = 'turn:main' | `item:${string}`
+
 /** Terminal state of one review run. */
 export type ReviewOutcome = 'completed' | 'failed' | 'cancelled' | 'interrupted'
 
@@ -47,7 +50,7 @@ export interface ReviewStartData {
 /** Records one real Codex JSONL progress transition. */
 export interface ReviewActivityData {
   readonly commandId: CommandId
-  readonly activityId: string
+  readonly activityId: ReviewActivityId
   readonly kind: ReviewActivityKind
   readonly status: ReviewActivityStatus
   readonly detail?: string

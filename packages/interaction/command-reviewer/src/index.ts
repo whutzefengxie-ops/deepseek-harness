@@ -32,7 +32,8 @@ export {
 } from './codex.ts'
 export type { CodexJsonProgress, CodexReviewLaunch, CodexReviewOptions, CodexSandbox, CodexThinkingEffort } from './codex.ts'
 export type {
-  ReviewActivityData, ReviewActivityKind, ReviewActivityStatus, ReviewEndData, ReviewOutcome, ReviewRequestData,
+  ReviewActivityData, ReviewActivityId, ReviewActivityKind, ReviewActivityStatus, ReviewEndData, ReviewOutcome,
+  ReviewRequestData,
   ReviewStartData,
 } from './types.ts'
 

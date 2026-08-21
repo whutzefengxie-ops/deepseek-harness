@@ -259,6 +259,9 @@ describe('web e2e: durable reviewer lifecycle', () => {
         timeoutMs: 1_800_000,
       },
     })
+    original.agent.session.append('review/activity', {
+      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
+    })
     await expect(scaffold.ctx.sessions.flush(original.agent.session)).resolves.toBe(true)
     await workspace.attachSession(sessionId)
     await original.dispose()
@@ -298,6 +301,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       await row.click()
       await page.locator('[data-reviewer][data-review-status="interrupted"]')
         .waitFor({ timeout: 15_000 })
+      expect(await page.getByText('stopped', { exact: true }).count()).toBe(1)
       expect(await page.getByText(
         'Review interrupted because its previous host stopped before recording completion.',
         { exact: true },
@@ -340,6 +344,9 @@ describe('web e2e: durable reviewer lifecycle', () => {
         timeoutMs: 1_800_000,
       },
     })
+    original.agent.session.append('review/activity', {
+      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
+    })
     original.agent.session.append('review/end', {
       commandId, outcome: 'completed', text: 'Terminal review survived the acknowledgement gap.',
     })
@@ -366,6 +373,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       await row.click()
       await page.locator('[data-reviewer][data-review-status="completed"]')
         .waitFor({ timeout: 15_000 })
+      expect(await page.getByText('stopped', { exact: true }).count()).toBe(1)
       expect(await page.getByText(
         'Terminal review survived the acknowledgement gap.',
         { exact: true },

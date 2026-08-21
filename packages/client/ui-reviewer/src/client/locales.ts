@@ -11,6 +11,7 @@ export const zh = {
   activity: '执行链路',
   empty: '等待 Codex 事件…',
   started: '开始',
+  stopped: '已停止',
   done: '完成',
 } as const
 /** English reviewer-card messages. */
@@ -24,6 +25,7 @@ export const en = {
   activity: 'Activity',
   empty: 'Waiting for Codex events…',
   started: 'started',
+  stopped: 'stopped',
   done: 'done',
 } as const
 /** Message keys shared by every reviewer-card locale. */
