@@ -12,7 +12,7 @@ Status: implemented
 
 ## Decision
 
-`SubprocessSpawnSpec.hostDeath` 会显式声明宿主丢失后的行为。`'allow'` 接受提供方特有的存活行为，`'terminate'` 则要求提供方在宿主退出无法移除进程树执行能力时，于请求命令启动前拒绝。`dsh-subprocess-local` 会通过一个私有 Node guardian 启动 stdin 为 `ignore` 或完整批量输入、且不在打包单文件运行时中的普通 spawn。guardian 是公共 handle 的受管根。宿主通过 guardian stdin 发送一条 JSON 启动记录，并在 handle 整个生命周期内保留该管道。guardian 使用清理后的环境与请求 cwd 启动指定 argv，转发批量 stdin 与命令 stdout/stderr，并保留命令退出状态。目标侧 stdin 关闭属于被包含的尽力写入失败，不能以未处理的 guardian 流错误替换目标结果。另一条私有状态管道只传递实际命令的 spawn 失败，不会污染命令 stderr。
+`SubprocessSpawnSpec.hostDeath` 会显式声明宿主丢失后的行为。`'allow'` 接受提供方特有的存活行为，`'terminate'` 则要求提供方在宿主退出无法移除进程树执行能力时，于请求命令启动前拒绝。`dsh-subprocess-local` 会通过一个私有 Node guardian 启动 stdin 为 `ignore` 或完整批量输入、且不在打包单文件运行时中的普通 spawn。guardian 是公共 handle 的受管根。宿主通过 guardian stdin 发送一条 JSON 启动记录，并在 handle 整个生命周期内保留该管道。guardian 使用清理后的环境与请求 cwd 启动指定 argv，转发批量 stdin 与命令 stdout/stderr，并保留命令退出状态。目标侧 stdin 关闭属于被包含的尽力写入失败。在 POSIX 上，guardian 还会在正常进程组 SIGTERM 阶段保持存活，直到目标关闭，再复现目标退出结果；升级阶段的 SIGKILL 仍会移除整个进程组。这两条路径都不能以 guardian 流错误或提前的信号结果替换目标结果。另一条私有状态管道只传递实际命令的 spawn 失败，不会污染命令 stderr。
 
 控制管道意外 EOF 表示所有权丢失。在 POSIX 上，guardian 向自身 detached 进程组发送 SIGKILL；请求命令与普通后代都位于该组，但后代可以通过 `setsid()` 逃离。因此 POSIX 只把 guardian 用作 `hostDeath: 'allow'` 的尽力清理，并在目标启动前拒绝所有 `'terminate'` 请求。在 Windows 上，宿主创建 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job，在发送启动记录前把等待中的 guardian 加入其中，并持有唯一的 Job handle。后代会加入该 Job，因此宿主死亡导致 handle 关闭时，Windows 会终止全部成员；这是本地提供方唯一准入 `'terminate'` 的路径。请求命令与 guardian 退出后，Job 成员关系仍让残留后代可观察；正常 `terminate()` 调用 `TerminateJobObject`，`waitForExit()` 等待活动成员数降为零。Job 终止或成员查询失败时，提供方会关闭自有 handle 以触发 kill-on-close 约束，让等待式退出观察 reject，并继续持有进程 handle，直到 service dispose 报告该失败。guardian 的 EOF `taskkill /T /F` 仍是即时的次级档。已有的同步 `exit` 回调继续作为 JavaScript 可观察宿主退出的更快最终档，并继续持有 terminal session。
 
@@ -20,7 +20,7 @@ Status: implemented
 
 ## Verification
 
-进程级测试通过真实本地提供方启动一个隔离宿主，以及忽略 TERM 的普通根进程和后代，记录两个受管 pid，再从外部强制结束宿主。该场景覆盖 POSIX guardian 的尽力进程组清理与 Windows 保证，但不会声称 POSIX 目标无法守护化。聚焦拒绝测试会选择 POSIX 分支、请求 `'terminate'`，并证明写入标记文件的目标从未启动。Windows 原生用例让请求根正常退出，同时保留一个 detached 后代：`done` 会结算，有界 `waitForExit()` 会报告仍存在的 Job 成员，正常终止则会将其移除。同一套件还证明 guardian 保留批量 stdin、收集的 stdout、非零目标退出状态与目标 spawn 错误，并覆盖普通宿主退出清理和正常的先终止再等待退出 dispose。直接 guardian 回归会在大批量写入仍待处理时关闭目标 stdin，并要求目标后续退出状态保持权威。
+进程级测试通过真实本地提供方启动一个隔离宿主，以及忽略 TERM 的普通根进程和后代，记录两个受管 pid，再从外部强制结束宿主。该场景覆盖 POSIX guardian 的尽力进程组清理与 Windows 保证，但不会声称 POSIX 目标无法守护化。聚焦拒绝测试会选择 POSIX 分支、请求 `'terminate'`，并证明写入标记文件的目标从未启动。Windows 原生用例让请求根正常退出，同时保留一个 detached 后代：`done` 会结算，有界 `waitForExit()` 会报告仍存在的 Job 成员，正常终止则会将其移除。同一套件还证明 guardian 保留批量 stdin、收集的 stdout、非零目标退出状态与目标 spawn 错误，并覆盖普通宿主退出清理和正常的先终止再等待退出 dispose。直接 guardian 回归会在大批量写入仍待处理时关闭目标 stdin，并让目标捕获进程组 SIGTERM 后以零退出；两种场景都要求目标后续退出结果保持权威。
 
 `/review` 命令使用完整批量 stdin，要求 `hostDeath: 'terminate'`，并把该要求持久化到 `review/start.request`。因此本地提供方只在 Windows 运行它。启动记录会在 Job 持有的 spawn 前到达 Session 持久化检查点，所以恢复出的未闭合审查表示此前宿主既已持久化该操作，也已在提供方保证下准入；该保证已经移除旧 Codex 进程树的执行能力。POSIX 部署需要由 cgroup、supervisor 或等价所有权机制支撑的其他子进程提供方。
 

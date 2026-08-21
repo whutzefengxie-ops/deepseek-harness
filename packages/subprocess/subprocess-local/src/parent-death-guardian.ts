@@ -23,6 +23,8 @@ let command;
 let ownerGone = false;
 let launched = false;
 let reportingFailure = false;
+const awaitTargetOnSigterm = () => {};
+if (process.platform !== 'win32') process.on('SIGTERM', awaitTargetOnSigterm);
 
 function reportSpawnError(error) {
   reportingFailure = true;
@@ -86,6 +88,7 @@ function launch(line) {
     if (reportingFailure) return;
     if (ownerGone) return terminateForOwnerLoss();
     if (signal !== null && process.platform !== 'win32') {
+      process.removeListener('SIGTERM', awaitTargetOnSigterm);
       try { process.kill(process.pid, signal); } catch { process.exitCode = 1; }
       return;
     }

@@ -1,0 +1,22 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Terminal reviewer acknowledgement" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Restore the completed review without a duplicate command row. {{clock}}
+- button "Copy":
+  - img
+- text: Review Completed check terminal acknowledgement recovery
+- paragraph: Terminal review survived the acknowledgement gap.
+- textbox "Message the agent"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]

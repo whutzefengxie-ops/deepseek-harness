@@ -169,19 +169,21 @@ async function flushReviewLifecycle(ctx: Context, session: Session): Promise<voi
 
 /** Settle review and command prefixes whose owning Host is gone. */
 function recoverInterruptedReviews(agent: Agent): void {
-  const open = new Map<ReviewStartData['commandId'], SessionEvent<'review/start'>>()
+  const starts = new Map<ReviewStartData['commandId'], SessionEvent<'review/start'>>()
+  const ended = new Set<ReviewStartData['commandId']>()
   const settledCommands = new Set<ReviewStartData['commandId']>()
   for (const event of agent.session.events) {
-    if (event.type === 'review/start') open.set(event.data.commandId, event)
-    else if (event.type === 'review/end') open.delete(event.data.commandId)
+    if (event.type === 'review/start') starts.set(event.data.commandId, event)
+    else if (event.type === 'review/end') ended.add(event.data.commandId)
     else if (event.type === 'command/done') settledCommands.add(event.data.commandId)
   }
-  for (const [commandId, start] of open) {
+  for (const [commandId, start] of starts) {
     if (!settledCommands.has(commandId)) {
       agent.session.append('command/done', {
         commandId, kind: 'success', sourceEventSeq: start.seq,
       })
     }
+    if (ended.has(commandId)) continue
     appendReviewEvent(agent.session, 'review/end', {
       commandId,
       outcome: 'interrupted',

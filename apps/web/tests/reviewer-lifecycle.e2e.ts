@@ -24,6 +24,10 @@ import type {} from '@deepseek-ai/dsh-command-reviewer/types'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/reviewer-lifecycle', import.meta.url))
 const COMPLETED_UI_EXPECTED = fileURLToPath(new URL('./snapshots/reviewer-lifecycle/ui.expected.md', import.meta.url))
+const RECOVERED_UI_EXPECTED = fileURLToPath(new URL(
+  './snapshots/reviewer-lifecycle/recovered-terminal.expected.md',
+  import.meta.url,
+))
 const MODE = webSnapshotMode()
 
 describe('web e2e: durable reviewer lifecycle', () => {
@@ -199,7 +203,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(scaffold.ctx.commands.list(agent).map(command => command.name)).not.toContain('review')
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
-      await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+      await assertFixtureInventory(SNAPSHOT_DIR, ['recovered-terminal.expected.md', 'ui.expected.md'])
     },
     90_000,
   )
@@ -216,7 +220,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
       expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
       expect(tripwire.pageErrors).toEqual([])
       expect(tripwire.warnings).toEqual([])
-      await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+      await assertFixtureInventory(SNAPSHOT_DIR, ['recovered-terminal.expected.md', 'ui.expected.md'])
     },
     90_000,
   )
@@ -299,6 +303,76 @@ describe('web e2e: durable reviewer lifecycle', () => {
         { exact: true },
       ).count()).toBe(1)
       expect(await page.locator(`[data-command-id="${commandId}"]`).count()).toBe(0)
+    } finally {
+      await resumed.dispose()
+    }
+  }, 120_000)
+
+  it.skipIf(process.platform !== 'win32')('repairs a missing command acknowledgement after a terminal review resumes', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-terminal-acknowledgement'))
+    const sessionId = SessionId('reviewer-terminal-acknowledgement-web-e2e')
+    const cwd = join(scaffold.workspaceCwd, 'workspace')
+    const workspace = await scaffold.ctx.workspaceRegistry.resolveByPath(cwd)
+    if (workspace === undefined) throw new Error('connected Web workspace was not registered')
+
+    const original = await scaffold.ctx.agents.create({ sessionId, meta: { cwd } })
+    const commandId = CommandId('review-terminal-without-acknowledgement')
+    original.agent.session.append('turn/start', { turn: 1 })
+    const user = original.agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Restore the completed review without a duplicate command row.' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    original.agent.session.append('session/title', {
+      title: 'Terminal reviewer acknowledgement', messageSeqs: [user.seq], source: { kind: 'fallback' },
+    })
+    original.agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    original.agent.session.append('command/run', {
+      commandId, name: 'review', source: { kind: 'user' },
+    })
+    const start = original.agent.session.append('review/start', {
+      commandId,
+      focus: 'check terminal acknowledgement recovery',
+      request: {
+        prompt: 'Check terminal acknowledgement recovery.',
+        argv: ['/resolved/codex', 'exec', '--json'],
+        cwd,
+        hostDeath: 'terminate',
+        timeoutMs: 1_800_000,
+      },
+    })
+    original.agent.session.append('review/end', {
+      commandId, outcome: 'completed', text: 'Terminal review survived the acknowledgement gap.',
+    })
+    await expect(scaffold.ctx.sessions.flush(original.agent.session)).resolves.toBe(true)
+    await workspace.attachSession(sessionId)
+    await original.dispose()
+
+    const resumed = await scaffold.ctx.agents.resume({ resumeSessionId: sessionId })
+    try {
+      expect(resumed.agent.session.events.filter(event => (
+        event.type === 'command/done' && event.data.commandId === commandId
+      ))).toEqual([expect.objectContaining({
+        data: { commandId, kind: 'success', sourceEventSeq: start.seq },
+      })])
+      expect(resumed.agent.session.events.filter(event => (
+        event.type === 'review/end' && event.data.commandId === commandId
+      ))).toHaveLength(1)
+      await expect(scaffold.ctx.sessions.flush(resumed.agent.session)).resolves.toBe(true)
+
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      const row = page.getByRole('treeitem', { name: /Terminal reviewer acknowledgement/ })
+      await row.waitFor({ timeout: 15_000 })
+      await row.click()
+      await page.locator('[data-reviewer][data-review-status="completed"]')
+        .waitFor({ timeout: 15_000 })
+      expect(await page.getByText(
+        'Terminal review survived the acknowledgement gap.',
+        { exact: true },
+      ).count()).toBe(1)
+      expect(await page.locator(`[data-command-id="${commandId}"]`).count()).toBe(0)
+      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(RECOVERED_UI_EXPECTED, snapshot, MODE)
     } finally {
       await resumed.dispose()
     }
