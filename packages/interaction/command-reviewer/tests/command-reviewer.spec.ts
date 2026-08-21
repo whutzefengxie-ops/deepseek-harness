@@ -1,11 +1,15 @@
 import { PassThrough, Readable } from 'node:stream'
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
 import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
@@ -60,6 +64,7 @@ class StubSubprocess extends SubprocessRuntime {
   waitResult = true
   resolveGate: Promise<undefined> | undefined
   afterResolve: (() => void) | undefined
+  beforeSpawn: (() => void) | undefined
   onSpawn: (() => void) | undefined
   lookups: string[] = []
   liveStream: PassThrough | undefined
@@ -80,6 +85,7 @@ class StubSubprocess extends SubprocessRuntime {
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawns.push(spec)
+    this.beforeSpawn?.()
     if (this.spawnError !== undefined) throw this.spawnError
     const done = Promise.withResolvers<SubprocessOutcome>()
     const stream = this.manual ? new PassThrough() : Readable.from(this.nextChunks ?? [this.nextStdout])
@@ -148,18 +154,39 @@ interface Harness {
   readonly plugin: Awaited<ReturnType<Context['plugin']>>
 }
 
+const contexts = new Set<Context>()
+const persistenceRoots = new Set<string>()
+
+afterEach(async () => {
+  await Promise.all([...contexts].map(async (ctx) => { await ctx.fiber.dispose() }))
+  contexts.clear()
+  await Promise.all([...persistenceRoots].map(root => rm(root, { recursive: true, force: true })))
+  persistenceRoots.clear()
+})
+
+async function runtimeContext(settings: boolean): Promise<Context> {
+  const persistenceRoot = await mkdtemp(join(tmpdir(), 'dsh-command-reviewer-'))
+  persistenceRoots.add(persistenceRoot)
+  const ctx = new Context()
+  contexts.add(ctx)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(JsonlSessionPersistence, {
+    root: persistenceRoot,
+    compression: 'none',
+    writeBatchMaxDelayMs: 1,
+  })
+  await ctx.plugin(CommandRuntime)
+  if (settings) await ctx.plugin(MemorySettings)
+  await ctx.plugin(StubSubprocess)
+  return ctx
+}
+
 async function harness(options: {
   config?: commandReviewer.Config
   settings?: boolean
   cwd?: string
-  durability?: boolean
 } = {}): Promise<Harness> {
-  const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  if (options.durability !== false) ctx.on('session/flush', () => {})
-  await ctx.plugin(CommandRuntime)
-  if (options.settings === true) await ctx.plugin(MemorySettings)
-  await ctx.plugin(StubSubprocess)
+  const ctx = await runtimeContext(options.settings === true)
   const subprocess = ctx.subprocess as unknown as StubSubprocess
   const plugin = ctx.plugin(commandReviewer, options.config ?? {})
   await plugin.await()
@@ -208,7 +235,7 @@ async function reviewEnd(test: Harness) {
 describe('@deepseek-ai/dsh-command-reviewer registration', () => {
   it('registers a Loader-safe command and disposes it', async () => {
     const test = await harness()
-    expect(commandReviewer.inject).toEqual(['commands', 'sessions', 'subprocess'])
+    expect(commandReviewer.inject).toEqual(['commands', 'sessions', 'sessionPersistence', 'subprocess'])
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(commandReviewer)).toBe(commandReviewer)
     expect(test.ctx.commands.find(test.agent, 'review')).toMatchObject({ recordInput: false })
@@ -217,23 +244,15 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
   })
 
   it('rejects a termination grace outside the Node timer range', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(StubSubprocess)
+    const ctx = await runtimeContext(false)
     await expect(ctx.plugin(commandReviewer, { terminateGraceMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
-    await ctx.fiber.dispose()
   })
 
   it('rejects a review timeout outside the Node timer range', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(StubSubprocess)
+    const ctx = await runtimeContext(false)
     await expect(ctx.plugin(commandReviewer, { timeoutMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`command-reviewer: timeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
-    await ctx.fiber.dispose()
   })
 })
 
@@ -442,9 +461,31 @@ describe('/review durable background lifecycle', () => {
     expect(flushes).toBe(2)
   })
 
-  it('retains admission when no durability listener can persist either lifecycle record', async () => {
-    const test = await harness({ durability: false })
+  it('does not treat a successful flush as durable when reread omits review/start', async () => {
+    const test = await harness()
     seed(test)
+    const readFrom = test.ctx.sessionPersistence.readFrom.bind(test.ctx.sessionPersistence)
+    let reads = 0
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation(async (id, fromSeq, signal) => {
+      const durable = await readFrom(id, fromSeq, signal)
+      reads += 1
+      return reads === 1 ? { ...durable, events: [] } : durable
+    })
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    expect(test.subprocess.spawns).toEqual([])
+    const end = await reviewEnd(test)
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toContain('durable session log does not contain review/start seq')
+    expect(reads).toBe(2)
+  })
+
+  it('retains admission when durable reads cannot verify either lifecycle record', async () => {
+    const test = await harness()
+    seed(test)
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockRejectedValue(new Error('storage read unavailable'))
     const warn = vi.spyOn(test.ctx.logger, 'warn')
 
     const execution = await run(test)
@@ -1099,6 +1140,25 @@ describe('/review durable background lifecycle', () => {
     const execution = await run(test)
     expect(execution.result.kind).toBe('success')
     expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'failed', text: 'The review could not start: spawn exploded' })
+  })
+
+  it('records owner cancellation when teardown reenters through a throwing spawn', async () => {
+    const test = await harness()
+    seed(test)
+    let disposal: Promise<void> | undefined
+    test.subprocess.beforeSpawn = () => {
+      disposal = test.plugin.dispose()
+      throw new Error('spawn failed after teardown')
+    }
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    expect((await reviewEnd(test)).data).toMatchObject({
+      outcome: 'cancelled',
+      text: 'Review cancelled because its owner stopped.',
+    })
+    await expect(disposal).resolves.toBeUndefined()
   })
 
   it('releases its owner reservation when review/start cannot be appended', async () => {

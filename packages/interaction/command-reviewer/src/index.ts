@@ -8,12 +8,14 @@
 
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
+import { isDeepStrictEqual } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import { deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import {
@@ -36,8 +38,8 @@ export type {
 
 export const name = 'command-reviewer'
 
-/** Required services: commands, live sessions, and the subprocess seam. */
-export const inject = ['commands', 'sessions', 'subprocess']
+/** Required services: commands, live sessions, durable session storage, and the subprocess seam. */
+export const inject = ['commands', 'sessions', 'sessionPersistence', 'subprocess']
 
 /** Default review instructions sent to Codex when the section carries none. */
 export const DEFAULT_REVIEW_PROMPT = [
@@ -161,9 +163,18 @@ function appendReviewEvent<T extends 'review/start' | 'review/activity' | 'revie
   return append(type, data)
 }
 
-async function flushReviewLifecycle(ctx: Context, session: Session): Promise<void> {
-  if (!await ctx.sessions.flush(session)) {
-    throw new Error('command-reviewer: no session durability listener participated')
+type ReviewLifecycleEvent = SessionEvent<'review/start'> | SessionEvent<'review/end'>
+
+async function flushReviewLifecycle(
+  ctx: Context,
+  session: Session,
+  expected: ReviewLifecycleEvent,
+): Promise<void> {
+  await ctx.sessions.flush(session)
+  const stored = (await ctx.sessionPersistence.readFrom(session.id, expected.seq)).events
+    .find(event => event.seq === expected.seq)
+  if (!isDeepStrictEqual(stored, expected)) {
+    throw new Error(`command-reviewer: durable session log does not contain ${expected.type} seq ${expected.seq}`)
   }
 }
 
@@ -330,8 +341,13 @@ function ensureOwner(
   return owner
 }
 
-async function flushReviewStart(ctx: Context, session: Session, owner: ReviewOwner): Promise<boolean> {
-  await flushReviewLifecycle(ctx, session)
+async function flushReviewStart(
+  ctx: Context,
+  session: Session,
+  owner: ReviewOwner,
+  start: SessionEvent<'review/start'>,
+): Promise<boolean> {
+  await flushReviewLifecycle(ctx, session, start)
   return owner.stopping
 }
 
@@ -424,8 +440,8 @@ async function runReview(
     : diagnostics.length === 0
       ? { commandId, outcome: 'completed', text: completedText }
       : { commandId, outcome: 'failed', text: renderFailedReview(completedText, diagnostics) }
-  appendReviewEvent(session, 'review/end', end)
-  await flushReviewLifecycle(ctx, session)
+  const terminal = appendReviewEvent(session, 'review/end', end)
+  await flushReviewLifecycle(ctx, session, terminal)
 }
 
 /** Register the `/review` command and its settings section. */
@@ -463,8 +479,9 @@ export function apply(ctx: Context, config: Config): void {
     }
 
     const owner = ensureOwner(owners, invocation.agent)
+    const ownerStopped = (): boolean => owner.stopping
     /* v8 ignore next -- teardown unregisters the command; this guard only closes an in-flight dispatch race. */
-    if (owner.stopping) return { kind: 'error', text: 'Review owner is stopping.' }
+    if (ownerStopped()) return { kind: 'error', text: 'Review owner is stopping.' }
     if (owner.active.size >= resolved.maxConcurrentReviews) {
       return {
         kind: 'error',
@@ -545,12 +562,12 @@ export function apply(ctx: Context, config: Config): void {
       throw error
     }
     try {
-      if (await flushReviewStart(ctx, invocation.agent.session, owner)) {
+      if (await flushReviewStart(ctx, invocation.agent.session, owner, start)) {
         try {
-          appendReviewEvent(invocation.agent.session, 'review/end', {
+          const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
             commandId, outcome: 'cancelled', text: renderCancelledReview([]),
           })
-          await flushReviewLifecycle(ctx, invocation.agent.session)
+          await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
           settleOperation()
         } catch (error: unknown) {
           ctx.logger.warn(`command-reviewer: cancelled review publication remains owned: ${renderThrown(error)}`)
@@ -561,10 +578,10 @@ export function apply(ctx: Context, config: Config): void {
     } catch (error: unknown) {
       const text = `The review could not persist its start: ${renderThrown(error)}`
       try {
-        appendReviewEvent(invocation.agent.session, 'review/end', {
+        const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
           commandId, outcome: 'failed', text,
         })
-        await flushReviewLifecycle(ctx, invocation.agent.session)
+        await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
         settleOperation()
       } catch (terminalError: unknown) {
         const failure = new AggregateError(
@@ -594,12 +611,18 @@ export function apply(ctx: Context, config: Config): void {
       })
     } catch (error: unknown) {
       reviewDeadline[Symbol.dispose]()
-      const text = `The review could not start: ${renderThrown(error)}`
+      // A provider may request owner disposal reentrantly before throwing; its
+      // cleanup abort is published in the next microtask.
+      await Promise.resolve()
+      const cancelled = ownerStopped()
+      const text = cancelled
+        ? renderCancelledReview([])
+        : `The review could not start: ${renderThrown(error)}`
       try {
-        appendReviewEvent(invocation.agent.session, 'review/end', {
-          commandId, outcome: 'failed', text,
+        const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
+          commandId, outcome: cancelled ? 'cancelled' : 'failed', text,
         })
-        await flushReviewLifecycle(ctx, invocation.agent.session)
+        await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
         settleOperation()
       } catch (terminalError: unknown) {
         ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(terminalError)}`)

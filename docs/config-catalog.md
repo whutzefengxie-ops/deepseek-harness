@@ -471,7 +471,7 @@ Source: [`packages/code-runtime/code-runtime-worker-thread/src/index.ts:25`](../
 
 ## `@deepseek-ai/dsh-command-reviewer`
 
-Requires: `commands` · `sessions` · `subprocess`
+Requires: `commands` · `sessions` · `sessionPersistence` · `subprocess`
 
 ```ts config-catalog
 /** User-settings section of the reviewer command. */
@@ -509,7 +509,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-Source: [`packages/interaction/command-reviewer/src/index.ts:72`](../packages/interaction/command-reviewer/src/index.ts)
+Source: [`packages/interaction/command-reviewer/src/index.ts:74`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

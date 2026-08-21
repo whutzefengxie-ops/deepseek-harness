@@ -473,7 +473,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-command-reviewer`
 
-需要：`commands` · `sessions` · `subprocess`
+需要：`commands` · `sessions` · `sessionPersistence` · `subprocess`
 
 ```ts config-catalog
 /** User-settings section of the reviewer command. */
@@ -511,7 +511,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-来源：[`packages/interaction/command-reviewer/src/index.ts:72`](../packages/interaction/command-reviewer/src/index.ts)
+来源：[`packages/interaction/command-reviewer/src/index.ts:74`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 
