@@ -472,6 +472,18 @@ function ciWindowsCompleteGates(): Gate[] {
     ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
     : gate)
   const coverageAfter = coverage.map(gate => gate.id)
+  const reviewerLifecycle = pnpmExec('windows-reviewer-web', [
+    'vitest',
+    'run',
+    '--config',
+    'vitest.web.config.ts',
+    'apps/web/tests/reviewer-lifecycle.e2e.ts',
+  ], {
+    label: 'Windows reviewer Web lifecycle',
+    env: { DSH_SNAPSHOT: 'replay' },
+    needs: ['build'],
+    after: coverageAfter,
+  })
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
     // VitePress modes write the same output directory and cannot overlap.
@@ -485,6 +497,7 @@ function ciWindowsCompleteGates(): Gate[] {
     ciBuildGate(),
     pnpmScript('windows-site', 'docs:build', { label: 'production site' }),
     ...coverage,
+    reviewerLifecycle,
     ...observational,
   ]
 }

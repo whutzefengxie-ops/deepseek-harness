@@ -6,7 +6,7 @@ Browser presentation for the durable `/review` lifecycle. The package folds `rev
 
 ## Presentation
 
-The card appears as soon as `review/start` arrives. It shows the optional focus, current status, and real Codex JSONL activity for analysis, commands, tools, searches, file changes, and result production. Activity details contain safe operation summaries, never hidden reasoning text or invented percentages. `review/end` adds the final Markdown review or a failure, cancellation, or interrupted-host diagnostic.
+The card appears as soon as `review/start` arrives. It shows the optional focus, current status, and real Codex JSONL activity for analysis, commands, tools, searches, file changes, and result production. A running card with no activity says that it is waiting for Codex events; a terminal card never retains that waiting message. Activity details contain safe operation summaries, never hidden reasoning text or invented percentages. `review/end` adds the final Markdown review or a failure, cancellation, or interrupted-host diagnostic.
 
 The host command returns `sourceEventSeq` for the start record. The generic slash-command Definition suppresses its duplicate success row when this authoritative review node is available.
 

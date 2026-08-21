@@ -30,12 +30,12 @@ export function ReviewerPanel({ node, t }: Props) {
     </div>
     {data.focus.length > 0 && <div className={css.focus}>{data.focus}</div>}
     <div className={css.activities} aria-label={t('activity')}>
-      {data.activities.length === 0
-        ? <span className={css.empty}>{t('empty')}</span>
-        : data.activities.map(activity => <div className={css.activity} key={activity.activityId}>
+      {data.activities.length > 0
+        ? data.activities.map(activity => <div className={css.activity} key={activity.activityId}>
           <span>{activity.detail ?? activity.kind}</span>
           <span className={css.activityStatus}>{activity.status === 'started' ? t('started') : t('done')}</span>
-        </div>)}
+        </div>)
+        : data.status === 'running' && <span className={css.empty}>{t('empty')}</span>}
     </div>
     {data.text !== undefined && <div className={css.text}><MarkdownText text={data.text} /></div>}
   </section>

@@ -28,7 +28,7 @@ codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [
 
 纯日志生命周期为 `review/start` → 零到多个 `review/activity` → `review/end`，使用执行器生成的 `commandId` 关联。活动保留 Codex 条目身份与开始、完成状态，只投影安全类别与摘要；推理内容不会被记录。成功、结构化失败、畸形 JSONL、输出超限、非零退出、信号终止、超时和所有者取消都通过 `review/end` 结束，而不是落成通用 Remote 中止错误。失败终态会先保留失败前已解码出的最终审查文本，再组合所有已观察到的结构化、输出解码、运行时间、退出、信号、终止请求与进程完成诊断。收到 `agent/session-start` 时，插件扫描会话中没有终态的启动记录。持久化的 `hostDeath: 'terminate'` 准入事实与启动检查点使非 fork 记录成为此前进程生命周期的权威：Codex 不能在持久化前开始，而此前宿主消失时，获准的提供方会移除旧进程树的执行能力。恢复逻辑会在命令确认缺失时先追加一条指向 `review/start` 的成功 `command/done`，再追加一个 `interrupted` 终态。若继承的启动事件序号位于 `SessionHeader.seedLength` 内，则改为记录该运行没有在 fork 中继续，并保持源会话不变；fork 在该边界后自行追加的启动事件仍按普通宿主停止恢复。压缩仍在同一会话和所有者中进行，不会结束审查。第二次启动边沿会看到两个生命周期都已闭合，不再追加记录。
 
-`@deepseek-ai/dsh-client-ui-reviewer` 把这一事件族折叠为一个 Chat 节点，并渲染最终 Markdown。刷新后会重放出相同的运行中或终态，宿主恢复与 fork 继承会把各自不同的记录原因显示为「已中断」；若分页只包含运行中活动或终态事件，则会先用空关注点重建卡片，直到包含 `review/start` 的分页到达。`command/done.sourceEventSeq` 指向 `review/start`；只有可见的非 command Chat 节点确实使用该锚点时，Chat 投影才隐藏通用命令行，因此未安装审查卡片的部署仍保留通用结果。生命周期 invariant 会检查 `/review` 命令身份、关注点、请求字段与 `command/done` 的精确来源关系。实现不虚构百分比。
+`@deepseek-ai/dsh-client-ui-reviewer` 把这一事件族折叠为一个 Chat 节点，并渲染最终 Markdown。刷新后会重放出相同的运行中或终态，宿主恢复与 fork 继承会把各自不同的记录原因显示为「已中断」；若分页只包含运行中活动或终态事件，则会先用空关注点重建卡片，直到包含 `review/start` 的分页到达。没有活动的运行中卡片会等待 Codex 事件；终态卡片会移除这条等待文案。`command/done.sourceEventSeq` 指向 `review/start`；只有可见的非 command Chat 节点确实使用该锚点时，Chat 投影才隐藏通用命令行，因此未安装审查卡片的部署仍保留通用结果。生命周期 invariant 会检查 `/review` 命令身份、关注点、请求字段与 `command/done` 的精确来源关系。实现不虚构百分比。
 
 ### `command-reviewer` 设置节承载全部可调项
 
@@ -37,6 +37,10 @@ codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [
 ### 命令完全不进入被审查 agent 的模型流
 
 审查是一次辅助进程，不是宿主编排内的 LLM 请求。命令事件对与所有 `review/*` 事件都保持纯日志：构建出的提示词、Codex 运行和审查文本都不会进入被审查 agent 的请求。被读取的会话数据只有对话记录；`maxTranscriptChars` 限制其保留尾部，`maxPromptBytes` 限制加上包装和补充段落后的完整提示词。
+
+## 验证
+
+组合后的 Web 生命周期测试会通过 Chromium 提交命令，并在两种受支持的宿主结果上检查持久化会话日志。原生 Windows 证明受 Job 持有的 Codex 启动、公开活动、完成与刷新重放；POSIX 证明本地提供方不启动 Codex 进程，并会重放持久失败。[Windows CI 拓扑](../process/2026-08-08-native-windows-pull-request-ci.md)负责这些平台结果的运行位置。
 
 ## 备选方案
 

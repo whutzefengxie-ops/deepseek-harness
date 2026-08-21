@@ -177,14 +177,14 @@ describe('ReviewerPanel', () => {
   })
 
   it.each([
-    ['running', 'ongoing', zh.running],
+    ['completed', 'done', zh.completed],
     ['failed', 'error', zh.failed],
     ['cancelled', 'warning', zh.cancelled],
     ['interrupted', 'warning', zh.interrupted],
-  ] as const)('renders the %s status and an empty activity list', (status, dot, label) => {
+  ] as const)('renders the %s status without a stale waiting message', (status, dot, label) => {
     const view = render(<ReviewerPanel {...panelProps({ focus: '', status, activities: [] })} />)
     expect(screen.getByText(label)).toBeTruthy()
-    expect(screen.getByText(zh.empty)).toBeTruthy()
+    expect(screen.queryByText(zh.empty)).toBeNull()
     expect(view.container.querySelector(`[data-state="${dot}"]`)).toBeTruthy()
   })
 

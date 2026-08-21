@@ -506,6 +506,10 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install chromium
+
       - name: Run complete native Windows gate inventory
         shell: pwsh
         run: pnpm run check:ci:windows-complete
@@ -640,6 +644,10 @@ jobs:
       - name: Install (immutable)
         shell: pwsh
         run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install chromium
 
       - name: Run complete unsharded Windows gate inventory serially
         shell: pwsh

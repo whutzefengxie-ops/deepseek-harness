@@ -12,6 +12,8 @@ Status: implemented
 
 ## 决策
 
+在这套拓扑中，原生聚合会安装 Playwright Chromium，并在构建与两道覆盖率门禁均结算后运行聚焦的 `apps/web/tests/reviewer-lifecycle.e2e.ts`。该门禁在 `windows-native` 内具有阻断性：Chromium 会通过随附 Web 组合与确定性的 Codex CLI，实际覆盖命令分发、会话持久化、本地子进程提供方、Windows Job Object 所有权、进度渲染和刷新重放。Wine 通道不运行该门禁，因为 Linux 内核上的 Windows Node 进程无法证明 Job Object 约束。必跑的 Linux Web 快照会驱动同一组合，改为证明 POSIX 本地提供方会清空已经准入的输入框、记录持久失败、不启动 Codex 进程，并在刷新后重放该失败。
+
 [ci.yml](../../../../.github/workflows/ci.yml) 中必需的 `windows` 作业仍是在 `ubuntu-latest` 上运行的 `windows node 24 / wine blocking`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。稳定的 `windows` 作业 ID 仍是 `all checks passed` 的依赖项。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.md)保留其实测取舍，而本文负责当前双通道拓扑。
 
 每个拉取请求还会在组织自有的 `dsh-windows-2025-16core` 运行器上启动一个常规且独立的 `windows-native` 作业，名称为 `windows node 24 / native complete`。该作业为工作区符号链接启用开发人员模式，通过 `pnpm/action-setup` 提供仓库固定版本的 pnpm，在不传输 store 归档的情况下执行不可变安装，并在原生 PowerShell 下运行 `pnpm run check:ci:windows-complete`。门禁卡住时，120 分钟超时会为其设定上限，同时不把实测性能目标当作正确性截止时间。

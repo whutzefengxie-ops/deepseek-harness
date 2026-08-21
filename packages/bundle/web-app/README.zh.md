@@ -31,3 +31,4 @@ Web 使用共享的有界 normal 默认值，在首次请求后最多再重试�
 - **只观测交接启动**：平台 opener 接受 spawn 后即结束观察，但 Windows 会等待其短生命周期 PowerShell launcher 退出；之后的浏览器退出不会上报，已打印 URL 仍是手动访问的回退路径。
 - **SSH 转发持有浏览器 URL**：打印出的规范 URL 指向远端宿主机 loopback 端点；自动交接会被跳过，SSH 客户端或编辑器必须暴露并打开其本地转发地址。
 - **浏览器命令覆盖只能来自启动环境**：被发现的 `.env` 不得设置 `BROWSER`；只有继承值可以抵达会读取该变量的 opener 路径，避免 checkout 为自动交接选择可执行文件。
+- **本地 `/review` 进程所有权只在 Windows 可用**：随附 Web 组合会挂载[审查者命令](../../interaction/command-reviewer/README.md)，但其本地子进程提供方会在 POSIX 上、Codex 启动前拒绝运行，并在 Chat 中渲染持久失败。POSIX 部署需要提供等价宿主死亡保证的子进程提供方。

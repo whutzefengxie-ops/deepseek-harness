@@ -110,6 +110,14 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('windows-reviewer-web')).toMatchObject({
+      label: 'Windows reviewer Web lifecycle',
+      displayCommand: 'pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/reviewer-lifecycle.e2e.ts',
+      env: { DSH_SNAPSHOT: 'replay' },
+      needs: ['build'],
+      after: ['coverage', 'coverage-exempt-heavy'],
+    })
+    expect(byId.get('windows-reviewer-web')?.allowFailure).not.toBe(true)
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)

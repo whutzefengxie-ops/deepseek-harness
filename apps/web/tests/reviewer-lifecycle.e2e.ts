@@ -2,6 +2,7 @@
 // durable replay, presentation, and Host recovery. Only the external Codex CLI
 // is deterministic; Chromium, HTTP/RPC, command dispatch, persistence, and the
 // shipped subprocess provider run as composed production code.
+import { existsSync } from 'node:fs'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -21,8 +22,12 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 import type {} from '@deepseek-ai/dsh-command-reviewer/types'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/reviewer-lifecycle', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('./snapshots/reviewer-lifecycle/ui.expected.md', import.meta.url))
+const COMPLETED_UI_EXPECTED = fileURLToPath(new URL('./snapshots/reviewer-lifecycle/ui.expected.md', import.meta.url))
+const UNSUPPORTED_UI_EXPECTED = fileURLToPath(
+  new URL('./snapshots/reviewer-lifecycle/posix-unsupported.expected.md', import.meta.url),
+)
 const MODE = webSnapshotMode()
+const POSIX_FAILURE = 'The review could not start: subprocess-local: host-death termination requires Windows Job Object ownership'
 
 describe('web e2e: durable reviewer lifecycle', () => {
   let scaffold: WebScaffold
@@ -31,14 +36,32 @@ describe('web e2e: durable reviewer lifecycle', () => {
   let tripwire: ReturnType<typeof watchConsole>
   let fakeCodexRoot: string
   let fakeCodexRelease: string
+  let fakeCodexStarted: string
   let originalPath: string | undefined
+
+  const seedConversationAndSubmitReview = async () => {
+    const session = scaffold.ctx.sessions.list()[0]
+    if (session === undefined) throw new Error('fresh workspace did not create a session')
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Please implement the concurrency fix.' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const input = page.locator('textarea').first()
+    await input.waitFor({ timeout: 10_000 })
+    await input.fill('/review review the concurrency fix')
+    await input.press('Enter')
+    return { input, session }
+  }
 
   beforeAll(async () => {
     fakeCodexRoot = await mkdtemp(join(tmpdir(), 'dsh-web-reviewer-codex-'))
     fakeCodexRelease = join(fakeCodexRoot, 'release')
+    fakeCodexStarted = join(fakeCodexRoot, 'started')
     const fakeCodex = join(fakeCodexRoot, 'fake-codex.mjs')
     const reviewText = '## Review result\n\nThe browser request is detached from the admitted Codex process, and refresh replay preserves the result.'
     await writeFile(fakeCodex, [
+      'const { existsSync, writeFileSync } = await import("node:fs")',
+      `writeFileSync(${JSON.stringify(fakeCodexStarted)}, "")`,
       'await new Promise(resolve => { process.stdin.resume(); process.stdin.once("end", resolve) })',
       `const started = ${JSON.stringify([
         { type: 'thread.started', thread_id: 'web-reviewer-thread' },
@@ -54,7 +77,6 @@ describe('web e2e: durable reviewer lifecycle', () => {
       ])}`,
       'for (const event of started) process.stdout.write(`${JSON.stringify(event)}\\n`)',
       `const release = ${JSON.stringify(fakeCodexRelease)}`,
-      'const { existsSync } = await import("node:fs")',
       'while (!existsSync(release)) await new Promise(resolve => setTimeout(resolve, 20))',
       'for (const event of completed) process.stdout.write(`${JSON.stringify(event)}\\n`)',
       '',
@@ -88,71 +110,100 @@ describe('web e2e: durable reviewer lifecycle', () => {
     }
   })
 
-  it('submits /review through Chromium and persists real subprocess progress without a duplicate command row', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle'))
-    const session = scaffold.ctx.sessions.list()[0]
-    if (session === undefined) throw new Error('fresh workspace did not create a session')
-    session.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'Please implement the concurrency fix.' }],
-      source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
-    const input = page.locator('textarea').first()
-    await input.waitFor({ timeout: 10_000 })
-    await input.fill('/review review the concurrency fix')
-    await input.press('Enter')
+  it.skipIf(process.platform !== 'win32')(
+    'submits /review through Chromium and persists Windows Job-owned subprocess progress',
+    async () => {
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle'))
+      const { input, session } = await seedConversationAndSubmitReview()
 
-    await page.locator('[data-reviewer][data-review-status="running"]').waitFor({ timeout: 15_000 })
-    await expect.poll(() => input.inputValue()).toBe('')
-    try {
-      await expect.poll(() => session.events.some(event => event.type === 'review/activity')).toBe(true)
-      const activity = page.getByLabel('Activity')
-      await activity.getByText('analysis', { exact: true }).first().waitFor({ timeout: 15_000 })
-      await activity.getByText('started', { exact: true }).first().waitFor({ timeout: 15_000 })
-    } finally {
-      await writeFile(fakeCodexRelease, '')
-    }
-    await page.locator('[data-reviewer][data-review-status="completed"]').waitFor({ timeout: 15_000 })
-    expect(await input.isEnabled()).toBe(true)
-    expect(await page.getByText('pnpm exec vitest run reviewer', { exact: true }).count()).toBe(1)
-    expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
-    expect(await page.locator('[data-command-input]').count()).toBe(0)
-    expect(await page.locator('[data-command-id]').count()).toBe(0)
-    await expect(scaffold.ctx.sessions.flush(session)).resolves.toBe(true)
-    const persisted = await scaffold.ctx.sessionPersistence.inspect(session.id)
-    expect(persisted.events.filter(event => event.type === 'command/run')).toMatchObject([{
-      data: { name: 'review' },
-    }])
-    expect(persisted.events.find(event => event.type === 'command/run')?.data).not.toHaveProperty('args')
-    expect(persisted.events.filter(event => event.type === 'review/start')).toHaveLength(1)
-    expect(persisted.events.filter(event => event.type === 'review/activity').map(event => event.data))
-      .toMatchObject([
-        { activityId: 'turn', kind: 'analysis', status: 'started' },
-        { activityId: 'reason', kind: 'analysis', status: 'started' },
-        { activityId: 'reason', kind: 'analysis', status: 'completed' },
-        { activityId: 'command', kind: 'command', status: 'completed' },
-        { activityId: 'search', kind: 'web-search', status: 'completed' },
-        { activityId: 'message', kind: 'message', status: 'completed' },
-        { activityId: 'turn', kind: 'analysis', status: 'completed' },
-      ])
-    expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
-      data: { outcome: 'completed' },
-    }])
+      await page.locator('[data-reviewer][data-review-status="running"]').waitFor({ timeout: 15_000 })
+      await expect.poll(() => input.inputValue()).toBe('')
+      try {
+        await expect.poll(() => existsSync(fakeCodexStarted)).toBe(true)
+        await expect.poll(() => session.events.some(event => event.type === 'review/activity')).toBe(true)
+        const activity = page.getByLabel('Activity')
+        await activity.getByText('analysis', { exact: true }).first().waitFor({ timeout: 15_000 })
+        await activity.getByText('started', { exact: true }).first().waitFor({ timeout: 15_000 })
+      } finally {
+        await writeFile(fakeCodexRelease, '')
+      }
+      await page.locator('[data-reviewer][data-review-status="completed"]').waitFor({ timeout: 15_000 })
+      expect(await input.isEnabled()).toBe(true)
+      expect(await page.getByText('pnpm exec vitest run reviewer', { exact: true }).count()).toBe(1)
+      expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
+      expect(await page.locator('[data-command-input]').count()).toBe(0)
+      expect(await page.locator('[data-command-id]').count()).toBe(0)
+      await expect(scaffold.ctx.sessions.flush(session)).resolves.toBe(true)
+      const persisted = await scaffold.ctx.sessionPersistence.inspect(session.id)
+      expect(persisted.events.filter(event => event.type === 'command/run')).toMatchObject([{
+        data: { name: 'review' },
+      }])
+      expect(persisted.events.find(event => event.type === 'command/run')?.data).not.toHaveProperty('args')
+      expect(persisted.events.filter(event => event.type === 'review/start')).toHaveLength(1)
+      expect(persisted.events.filter(event => event.type === 'review/activity').map(event => event.data))
+        .toMatchObject([
+          { activityId: 'turn', kind: 'analysis', status: 'started' },
+          { activityId: 'reason', kind: 'analysis', status: 'started' },
+          { activityId: 'reason', kind: 'analysis', status: 'completed' },
+          { activityId: 'command', kind: 'command', status: 'completed' },
+          { activityId: 'search', kind: 'web-search', status: 'completed' },
+          { activityId: 'message', kind: 'message', status: 'completed' },
+          { activityId: 'turn', kind: 'analysis', status: 'completed' },
+        ])
+      expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
+        data: { outcome: 'completed' },
+      }])
 
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
-  }, 60_000)
+      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(COMPLETED_UI_EXPECTED, snapshot, MODE)
+    },
+    60_000,
+  )
 
-  it('restores the same completed card after reload', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'rejects /review before Codex starts when the local POSIX provider cannot contain daemonized descendants',
+    async () => {
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-posix-unsupported'))
+      const { input, session } = await seedConversationAndSubmitReview()
+
+      await page.locator('[data-reviewer][data-review-status="failed"]').waitFor({ timeout: 15_000 })
+      await expect.poll(() => input.inputValue()).toBe('')
+      expect(await input.isEnabled()).toBe(true)
+      expect(await page.getByText(POSIX_FAILURE, { exact: true }).count()).toBe(1)
+      expect(existsSync(fakeCodexStarted)).toBe(false)
+      expect(session.events.filter(event => event.type === 'review/activity')).toHaveLength(0)
+      await expect(scaffold.ctx.sessions.flush(session)).resolves.toBe(true)
+      const persisted = await scaffold.ctx.sessionPersistence.inspect(session.id)
+      expect(persisted.events.filter(event => event.type === 'command/run')).toMatchObject([{
+        data: { name: 'review' },
+      }])
+      expect(persisted.events.filter(event => event.type === 'review/start')).toMatchObject([{
+        data: { request: { hostDeath: 'terminate' } },
+      }])
+      expect(persisted.events.filter(event => event.type === 'review/activity')).toHaveLength(0)
+      expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
+        data: { outcome: 'failed', text: POSIX_FAILURE },
+      }])
+
+      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(UNSUPPORTED_UI_EXPECTED, snapshot, MODE)
+    },
+    60_000,
+  )
+
+  it('restores the same terminal card after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle-reload'))
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    await page.locator('[data-reviewer][data-review-status="completed"]').waitFor({ timeout: 15_000 })
-    expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
+    const expectedStatus = process.platform === 'win32' ? 'completed' : 'failed'
+    await page.locator(`[data-reviewer][data-review-status="${expectedStatus}"]`).waitFor({ timeout: 15_000 })
+    const terminalText = process.platform === 'win32' ? 'Review result' : POSIX_FAILURE
+    expect(await page.getByText(terminalText, { exact: true }).count()).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['posix-unsupported.expected.md', 'ui.expected.md'])
   }, 90_000)
 
   it('closes a persisted open review when its Agent resumes', async () => {
