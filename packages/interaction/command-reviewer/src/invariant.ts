@@ -149,6 +149,13 @@ function applyEvent(trace: Trace, event: SessionEvent, fail: InvariantFailure): 
       if (typeof data.activityId !== 'string' || data.activityId.length === 0) {
         fail('review/activity activityId must be a non-empty string')
       }
+      if (data.activityId !== 'turn:main'
+        && (!data.activityId.startsWith('item:') || data.activityId.length === 'item:'.length)) {
+        fail('review/activity activityId must be turn:main or item:<external id>')
+      }
+      if (data.activityId === 'turn:main' && data.kind !== 'analysis') {
+        fail('review/activity turn:main must use analysis kind')
+      }
       if (!['analysis', 'command', 'tool', 'web-search', 'file-change', 'message', 'other'].includes(String(data.kind))) {
         fail(`review/activity kind ${String(data.kind)} is invalid`)
       }

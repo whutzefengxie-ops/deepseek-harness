@@ -754,6 +754,27 @@ describe('/review durable background lifecycle', () => {
     expect(end.data.text).toContain('Codex output failed: invalid JSON')
   })
 
+  it.each(['stream', 'collected'] as const)(
+    'preserves a complete review before later bytes in the same %s output exceed the cap',
+    async (mode) => {
+      const message = `${JSON.stringify({
+        type: 'item.completed',
+        item: { id: 'message', type: 'agent_message', text: 'Useful capped findings.' },
+      })}\n`
+      const test = await harness({ config: { maxOutputBytes: Buffer.byteLength(message) } })
+      seed(test)
+      test.subprocess.stdoutMode = mode
+      test.subprocess.nextStdout = `${message}overflow`
+
+      await run(test)
+
+      const end = await reviewEnd(test)
+      expect(end.data.outcome).toBe('failed')
+      expect(end.data.text).toContain('Useful capped findings.')
+      expect(end.data.text).toContain(`exceeded configured limit of ${Buffer.byteLength(message)} bytes`)
+    },
+  )
+
   it('combines output overflow with signal termination', async () => {
     const test = await harness({ config: { maxOutputBytes: 8 } })
     seed(test)

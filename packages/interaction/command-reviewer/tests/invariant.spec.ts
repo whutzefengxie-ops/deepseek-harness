@@ -39,14 +39,14 @@ describe('command-reviewer durable invariant', () => {
     const startSeq = appendStart(session, commandId)
     session.append('command/done', { commandId, kind: 'success', sourceEventSeq: startSeq })
     session.append('review/activity', {
-      commandId, activityId: 'turn', kind: 'analysis', status: 'started',
+      commandId, activityId: 'turn:main', kind: 'analysis', status: 'started',
     })
     session.append('review/activity', {
-      commandId, activityId: 'turn', kind: 'analysis', status: 'completed',
+      commandId, activityId: 'turn:main', kind: 'analysis', status: 'completed',
     })
     // Codex can emit item.completed without an item.started record.
     session.append('review/activity', {
-      commandId, activityId: 'message', kind: 'message', status: 'completed',
+      commandId, activityId: 'item:message', kind: 'message', status: 'completed',
     })
     expect(() => session.append('review/end', {
       commandId, outcome: 'completed', text: 'review',
@@ -65,12 +65,12 @@ describe('command-reviewer durable invariant', () => {
     const startSeq = appendStart(session, commandId, 'resume')
     session.append('command/done', { commandId, kind: 'success', sourceEventSeq: startSeq })
     session.append('review/activity', {
-      commandId, activityId: 'command', kind: 'command', status: 'started', detail: 'pnpm test',
+      commandId, activityId: 'item:command', kind: 'command', status: 'started', detail: 'pnpm test',
     })
     await ctx.plugin(InvariantRegistry, { enabled: true })
     await ctx.plugin(invariant)
     expect(() => session.append('review/activity', {
-      commandId, activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test',
+      commandId, activityId: 'item:command', kind: 'command', status: 'completed', detail: 'pnpm test',
     })).not.toThrow()
   })
 
@@ -169,13 +169,13 @@ describe('command-reviewer durable invariant', () => {
       const commandId = CommandId('closed')
       appendStart(session, commandId)
       session.append('review/end', { commandId, outcome: 'cancelled', text: 'cancelled' })
-      session.append('review/activity', { commandId, activityId: 'late', kind: 'other', status: 'started' })
+      session.append('review/activity', { commandId, activityId: 'item:late', kind: 'other', status: 'started' })
     }, /appears after review\/end/],
     ['duplicate completion', (session: Session) => {
       const commandId = CommandId('activity')
       appendStart(session, commandId)
-      session.append('review/activity', { commandId, activityId: 'one', kind: 'tool', status: 'completed' })
-      session.append('review/activity', { commandId, activityId: 'one', kind: 'tool', status: 'completed' })
+      session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'completed' })
+      session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'completed' })
     }, /repeats completion/],
     ['invalid outcome', (session: Session) => {
       const commandId = CommandId('outcome')
@@ -200,32 +200,53 @@ describe('command-reviewer durable invariant', () => {
         commandId, activityId: '', kind: 'analysis', status: 'started',
       })
     }, /activityId must be a non-empty string/],
+    ['invalid activity namespace', (session: Session) => {
+      const commandId = CommandId('activity-namespace')
+      appendStart(session, commandId)
+      session.append('review/activity', {
+        commandId, activityId: 'turn', kind: 'analysis', status: 'started',
+      })
+    }, /activityId must be turn:main or item:<external id>/],
+    ['empty external activity id', (session: Session) => {
+      const commandId = CommandId('empty-external-activity-id')
+      appendStart(session, commandId)
+      session.append('review/activity', {
+        commandId, activityId: 'item:', kind: 'message', status: 'completed',
+      })
+    }, /activityId must be turn:main or item:<external id>/],
+    ['non-analysis turn activity', (session: Session) => {
+      const commandId = CommandId('turn-kind')
+      appendStart(session, commandId)
+      session.append('review/activity', {
+        commandId, activityId: 'turn:main', kind: 'command', status: 'started',
+      })
+    }, /turn:main must use analysis kind/],
     ['invalid activity kind', (session: Session) => {
       const commandId = CommandId('activity-kind')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: 'one', kind: 'future' as never, status: 'started',
+        commandId, activityId: 'item:one', kind: 'future' as never, status: 'started',
       })
     }, /kind future is invalid/],
     ['invalid activity status', (session: Session) => {
       const commandId = CommandId('activity-status')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: 'one', kind: 'analysis', status: 'pending' as never,
+        commandId, activityId: 'item:one', kind: 'analysis', status: 'pending' as never,
       })
     }, /status pending is invalid/],
     ['invalid activity detail', (session: Session) => {
       const commandId = CommandId('activity-detail')
       appendStart(session, commandId)
       session.append('review/activity', {
-        commandId, activityId: 'one', kind: 'analysis', status: 'started', detail: 1 as never,
+        commandId, activityId: 'item:one', kind: 'analysis', status: 'started', detail: 1 as never,
       })
     }, /detail must be a string/],
     ['duplicate activity start', (session: Session) => {
       const commandId = CommandId('activity-start')
       appendStart(session, commandId)
-      session.append('review/activity', { commandId, activityId: 'one', kind: 'tool', status: 'started' })
-      session.append('review/activity', { commandId, activityId: 'one', kind: 'tool', status: 'started' })
+      session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'started' })
+      session.append('review/activity', { commandId, activityId: 'item:one', kind: 'tool', status: 'started' })
     }, /repeats start/],
     ['invalid end text', (session: Session) => {
       const commandId = CommandId('end-text')

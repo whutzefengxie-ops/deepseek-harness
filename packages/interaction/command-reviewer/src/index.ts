@@ -267,24 +267,26 @@ async function readJsonl(
     }
   }
 
+  const consumeBytes = (bytesChunk: Buffer): void => {
+    const remaining = config.maxOutputBytes - bytes
+    const accepted = bytesChunk.subarray(0, Math.max(0, remaining))
+    bytes += bytesChunk.byteLength
+    consume(decoder.write(accepted))
+    if (bytes > config.maxOutputBytes) {
+      throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
+    }
+  }
+
   try {
     if (handle.stdout === undefined) {
       const collected = handle.collected.stdout
       if (collected === undefined) throw new Error('Codex stdout pipe is unavailable')
       const bytesChunk = Buffer.from(collected.readFrom(0).text)
-      bytes = bytesChunk.byteLength
-      if (bytes > config.maxOutputBytes) {
-        throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
-      }
-      consume(decoder.write(bytesChunk))
+      consumeBytes(bytesChunk)
     } else {
       for await (const chunk of handle.stdout) {
         const bytesChunk = chunkBuffer(chunk)
-        bytes += bytesChunk.byteLength
-        if (bytes > config.maxOutputBytes) {
-          throw new Error(`Codex JSONL output exceeded configured limit of ${config.maxOutputBytes} bytes`)
-        }
-        consume(decoder.write(bytesChunk))
+        consumeBytes(bytesChunk)
       }
     }
     consume(`${decoder.end()}\n`)
