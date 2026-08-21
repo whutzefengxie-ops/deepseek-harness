@@ -15,7 +15,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /**
  * Pairs one command execution's `command/run`/`command/done` lifecycle
  * records with each other and with the `command.execute` admission response.
- * Minted by the executor, monotonic per service instance.
+ * Minted by the executor from a process-instance UUID and a monotonic counter.
  */
 export type CommandId = Branded<'CommandId'>
 

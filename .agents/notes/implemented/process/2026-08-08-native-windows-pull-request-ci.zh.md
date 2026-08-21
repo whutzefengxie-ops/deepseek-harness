@@ -6,17 +6,17 @@ Status: implemented
 
 ## 问题
 
-拉取请求必需的 Windows 判定既需要快速的 win32 工具链信号，也不能让聚合流程等待稀缺的 Windows 容量。Wine 提供这项关键路径信号，但它运行在 Linux 内核与区分大小写的 ext4 之上，采用 hoisted 依赖布局，且无法证明 NTFS、DACL、ConPTY、崩溃持久性或原生进程行为。原生串行参考流程停用期间，每个拉取请求分支头还需要自动取得真实 Windows 内核结果。
+拉取请求必需的 Windows 判定既需要快速的 win32 工具链信号，也不能让聚合流程在稀缺的 Windows 容量上等待完整原生清单。Wine 提供工具链信号，但它运行在 Linux 内核与区分大小写的 ext4 之上，采用 hoisted 依赖布局，且无法证明 NTFS、DACL、ConPTY、崩溃持久性或原生进程行为。因此，Windows 专属产品行为需要进入必需路径的聚焦原生检查，而每个拉取请求分支头仍保留完整的自动 Windows 内核结果。
 
 覆盖率审计发现，陈旧分支状态恢复了针对受支持 LSP 源码的临时排除项。因此，原生 Windows 需要按同一逐文件 100% 阈值执行完整的受支持源码清单，而不能依赖缩小后的平台专用分母。
 
 ## 决策
 
-在这套拓扑中，原生聚合会安装 Playwright Chromium，并在构建与两道覆盖率门禁均结算后运行聚焦的 `apps/web/tests/reviewer-lifecycle.e2e.ts`。该门禁在 `windows-native` 内具有阻断性：Chromium 会通过随附 Web 组合与确定性的 Codex CLI，实际覆盖命令分发、会话持久化、本地子进程提供方、Windows Job Object 所有权、进度渲染和刷新重放。Wine 通道不运行该门禁，因为 Linux 内核上的 Windows Node 进程无法证明 Job Object 约束。必跑的 Linux Web 快照会驱动同一组合，改为证明默认 POSIX 命令目录和设置命名空间省略不受支持的审查者、不启动 Codex 进程，并且刷新前后都不显示审查卡片。
+在这套拓扑中，必需的 `windows-reviewer` 作业会在标准 Windows 运行器上安装 Playwright Chromium、构建产品，并运行 `apps/web/tests/reviewer-lifecycle.e2e.ts` 与 `apps/web/tests/reviewer-host-recovery.e2e.ts`。Chromium 会通过随附 Web 组合与确定性的 Codex CLI，实际覆盖命令分发、会话持久化、本地子进程提供方、Windows Job Object 所有权、进度渲染和刷新重放。进程级场景随后从浏览器提交 `/review`，从外部强制终止宿主，要求已准入的 Codex 根进程与脱离后代停止，再用同一持久化根重启构建后的宿主，并要求重复刷新后仍只有一条 interrupted 终态事件与一条命令确认。`all checks passed` 依赖这项聚焦原生结果。Wine 通道不运行这些测试，因为 Linux 内核上的 Windows Node 进程无法证明 Job Object 约束。必跑的 Linux Web 快照会驱动同一组合，改为证明默认 POSIX 命令目录和设置命名空间省略不受支持的审查者、不启动 Codex 进程，并且刷新前后都不显示审查卡片。
 
 [ci.yml](../../../../.github/workflows/ci.yml) 中必需的 `windows` 作业仍是在 `ubuntu-latest` 上运行的 `windows node 24 / wine blocking`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。稳定的 `windows` 作业 ID 仍是 `all checks passed` 的依赖项。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.md)保留其实测取舍，而本文负责当前双通道拓扑。
 
-每个拉取请求还会在组织自有的 `dsh-windows-2025-16core` 运行器上启动一个常规且独立的 `windows-native` 作业，名称为 `windows node 24 / native complete`。该作业为工作区符号链接启用开发人员模式，通过 `pnpm/action-setup` 提供仓库固定版本的 pnpm，在不传输 store 归档的情况下执行不可变安装，并在原生 PowerShell 下运行 `pnpm run check:ci:windows-complete`。门禁卡住时，120 分钟超时会为其设定上限，同时不把实测性能目标当作正确性截止时间。
+每个拉取请求还会在组织自有的 `dsh-windows-2025-16core` 运行器上启动一个常规且独立的 `windows-native` 作业，名称为 `windows node 24 / native complete`。该作业为工作区符号链接启用开发人员模式，通过 `pnpm/action-setup` 提供仓库固定版本的 pnpm，在不传输 store 归档的情况下执行不可变安装，并在原生 PowerShell 下运行 `pnpm run check:ci:windows-complete`。完整清单会在自身的构建与覆盖率阶段后重复运行审查者检查，使原生聚合保持自包含。门禁卡住时，120 分钟超时会为其设定上限，同时不把实测性能目标当作正确性截止时间。
 
 原生作业被刻意排除在 `all-checks-passed.needs` 之外，且不使用 `continue-on-error`：聚合流程既不等待它，也不会因它改变结论；该作业则保留自身未被掩盖的结果。工作区构建、生产网站和逐文件 100% 覆盖率检查失败会使原生作业失败。静态检查、文档、包、构建产物、lint 与快照清单在同一作业内作为观测性门禁运行；其失败保持可见，但不会改变原生聚合结果，因为这些检查的阻断性判定由 Linux 负责。
 
@@ -52,7 +52,7 @@ Shiki 会禁用 TextMate 正则的延迟编译，并在用户内容进入保持�
 
 ## 后果
 
-Wine 保留必需聚合流程现有的关键路径和作业身份。`all checks passed` 变绿时，原生 Windows 仍可能处于待处理或红灯状态，因此分支保护采用 Wine 结果，而评审者和后续自动化采用独立的原生结果。
+Wine 保留必需工具链作业的身份，聚焦审查者作业则提供分支保护所消费的原生生命周期结果。如果故障不属于这些必需的 Windows 检查，完整 `windows-native` 清单在 `all checks passed` 变绿时仍可能处于待处理或红灯状态；评审者和后续自动化继续消费该独立结果。
 
 尽管如此，每个拉取请求都会获得真实 NT 内核、NTFS、PowerShell、Windows 进程、原生插件和受支持源码覆盖率信号。原生作业会重复设置流程与两项阻断构建，在标准镜像上明显更慢；但它也会暴露兼容性通道掩盖的路径、watcher、生命周期与 fixture 缺陷。
 

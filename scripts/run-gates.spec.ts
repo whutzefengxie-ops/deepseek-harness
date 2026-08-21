@@ -112,7 +112,7 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
     expect(byId.get('windows-reviewer-web')).toMatchObject({
       label: 'Windows reviewer Web lifecycle',
-      displayCommand: 'pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/reviewer-lifecycle.e2e.ts',
+      displayCommand: 'pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/reviewer-lifecycle.e2e.ts apps/web/tests/reviewer-host-recovery.e2e.ts',
       env: { DSH_SNAPSHOT: 'replay' },
       needs: ['build'],
       after: ['coverage', 'coverage-exempt-heavy'],

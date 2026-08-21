@@ -413,6 +413,28 @@ describe('CommandRuntime', () => {
     expect(new Set(ids).size).toBe(2)
   })
 
+  it('keeps lifecycle pairs distinct when a new runtime writes the resumed session', async () => {
+    const first = await mount()
+    const { agent } = await mintAgentScope(first, 'a')
+    first.commands.register(command('first'))
+    await first.commands.execute(agent, '/first', [], new AbortController().signal)
+
+    const resumed = await mount()
+    resumed.commands.register(command('second'))
+    await resumed.commands.execute(agent, '/second', [], new AbortController().signal)
+
+    const events = lifecycleOf(agent)
+    const ids = events.map(event => (event.data as { commandId: string }).commandId)
+    expect(events.map(event => event.type)).toEqual([
+      'command/run', 'command/done', 'command/run', 'command/done',
+    ])
+    expect(ids[0]).toBe(ids[1])
+    expect(ids[2]).toBe(ids[3])
+    expect(ids[0]).not.toBe(ids[2])
+    expect(ids[0]).toMatch(/^cmd-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-1$/u)
+    expect(ids[2]).toMatch(/^cmd-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-1$/u)
+  })
+
   it('logs command/done kind error for an expected error result', async () => {
     const ctx = await mount()
     const { agent } = await mintAgentScope(ctx, 'a')

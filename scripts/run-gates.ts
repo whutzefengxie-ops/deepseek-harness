@@ -478,6 +478,7 @@ function ciWindowsCompleteGates(): Gate[] {
     '--config',
     'vitest.web.config.ts',
     'apps/web/tests/reviewer-lifecycle.e2e.ts',
+    'apps/web/tests/reviewer-host-recovery.e2e.ts',
   ], {
     label: 'Windows reviewer Web lifecycle',
     env: { DSH_SNAPSHOT: 'replay' },
