@@ -500,6 +500,8 @@ export interface Config {
   maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
+  /** Maximum durable activity transitions decoded from one Codex run. */
+  maxActivityEvents?: number
   /** Provider termination and collected-pipe drain grace; Windows force-terminates immediately. */
   subprocessGraceMs?: number
   /** Maximum elapsed time for one review before its process tree is terminated. */
@@ -517,7 +519,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-Source: [`packages/interaction/command-reviewer/src/index.ts:79`](../packages/interaction/command-reviewer/src/index.ts)
+Source: [`packages/interaction/command-reviewer/src/index.ts:81`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

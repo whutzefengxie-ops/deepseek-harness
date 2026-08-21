@@ -64,6 +64,8 @@ class StubSubprocess extends SubprocessRuntime {
   terminateDoneError: Error | undefined
   terminateError: Error | undefined
   terminateOutcome: SubprocessOutcome = { exitCode: null, signal: 'SIGTERM' }
+  settleStreamOnTerminate = true
+  settleDoneOnTerminate = true
   manual = false
   manualWait = false
   waitError: Error | undefined
@@ -107,11 +109,15 @@ class StubSubprocess extends SubprocessRuntime {
       if (stopped) return
       stopped = true
       if (this.manual) {
-        if (this.terminateStreamError) (stream as PassThrough).destroy(new Error('terminated stream'))
-        else (stream as PassThrough).end()
+        if (this.settleStreamOnTerminate) {
+          if (this.terminateStreamError) (stream as PassThrough).destroy(new Error('terminated stream'))
+          else (stream as PassThrough).end()
+        }
       }
-      if (this.terminateDoneError === undefined) done.resolve(this.terminateOutcome)
-      else done.reject(this.terminateDoneError)
+      if (this.settleDoneOnTerminate) {
+        if (this.terminateDoneError === undefined) done.resolve(this.terminateOutcome)
+        else done.reject(this.terminateDoneError)
+      }
     })
     const waitGate = this.manualWait ? Promise.withResolvers<boolean>() : undefined
     if (waitGate !== undefined) this.waitGates.push(waitGate)
@@ -963,6 +969,35 @@ describe('/review durable background lifecycle', () => {
     expect(text).toContain('Codex was terminated by SIGKILL.')
   })
 
+  it('accepts the exact activity cap and fails before persisting the first excess event', async () => {
+    const exact = await harness({ config: { maxActivityEvents: 5 } })
+    seed(exact)
+    await run(exact)
+    expect((await reviewEnd(exact)).data.outcome).toBe('completed')
+    expect(exact.agent.session.events.filter(event => event.type === 'review/activity')).toHaveLength(5)
+
+    const overflow = await harness({ config: { maxActivityEvents: 1 } })
+    seed(overflow)
+    overflow.subprocess.nextStdout = [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { id: 'message', type: 'agent_message', text: 'Useful bounded findings.' },
+      }),
+      JSON.stringify({
+        type: 'item.started',
+        item: { id: 'command', type: 'command_execution', command: 'git diff' },
+      }),
+    ].join('\n') + '\n'
+
+    await run(overflow)
+
+    const end = await reviewEnd(overflow)
+    expect(end.data.outcome).toBe('failed')
+    expect(end.data.text).toContain('Useful bounded findings.')
+    expect(end.data.text).toContain('Codex output exceeded configured activity-event limit of 1')
+    expect(overflow.agent.session.events.filter(event => event.type === 'review/activity')).toHaveLength(1)
+  })
+
   it('records malformed JSONL, missing output, nonzero exit, and output overflow as failures', async () => {
     const cases: Array<{ stdout: string; outcome?: SubprocessOutcome; config?: commandReviewer.Config; text: string }> = [
       { stdout: '{bad}\n', text: 'invalid JSON' },
@@ -1416,6 +1451,27 @@ describe('/review durable background lifecycle', () => {
       String(error).includes('process-tree exit wait ended without confirming exit')
     ))).toBe(true)
   })
+
+  it.each(['stdout', 'done'] as const)(
+    'bounds a subprocess %s observer that never settles during teardown',
+    async (observer) => {
+      const test = await harness({ config: { teardownTimeoutMs: 10 } })
+      seed(test)
+      test.subprocess.manual = true
+      if (observer === 'stdout') test.subprocess.settleStreamOnTerminate = false
+      else test.subprocess.settleDoneOnTerminate = false
+      const warn = vi.spyOn(test.ctx.logger, 'warn')
+      await run(test)
+
+      await test.plugin.dispose()
+
+      expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
+      expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+      expect(warn.mock.calls.some(([error]) => (
+        String(error).includes('COMMAND_REVIEW_TEARDOWN_TIMEOUT after 10ms')
+      ))).toBe(true)
+    },
+  )
 
   it('rejects teardown without a terminal record when process-tree exit cannot be confirmed', async () => {
     const test = await harness()

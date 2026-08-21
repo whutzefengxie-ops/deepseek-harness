@@ -18,7 +18,14 @@ export interface ReviewerChatData {
   readonly activities: readonly ReviewerActivity[]
   readonly text?: string
 }
-interface ReviewerState extends ReviewerChatData { readonly commandId: CommandId }
+/** Private replay accumulator whose activity index is snapshotted when a view node is published. */
+interface ReviewerState {
+  readonly commandId: CommandId
+  readonly focus: string
+  readonly status: ReviewerChatData['status']
+  readonly activityById: Map<ReviewActivityData['activityId'], ReviewerActivity>
+  readonly text?: string
+}
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap { reviewer: ReviewerChatData }
@@ -38,17 +45,14 @@ function statusFromEnd(end: ReviewEndData['outcome']): ReviewerChatData['status'
 function updateState(state: ReviewerState, match: ConversationMatch): ReviewerState {
   if (match.event.type === 'review/activity') {
     const data = match.event.data
-    const index = state.activities.findIndex(activity => activity.activityId === data.activityId)
     const activity = {
       activityId: data.activityId,
       kind: data.kind,
       status: data.status,
       ...data.detail === undefined ? {} : { detail: data.detail },
     }
-    const activities = index < 0
-      ? [...state.activities, activity]
-      : state.activities.map((item, itemIndex) => itemIndex === index ? activity : item)
-    return { ...state, activities }
+    state.activityById.set(data.activityId, activity)
+    return state
   }
   if (match.event.type !== 'review/end') return state
   const data = match.event.data
@@ -61,7 +65,7 @@ function fallbackState(context: ConversationNodeContext<ReviewerState>): Reviewe
     commandId: context.id as CommandId,
     focus: '',
     status: 'running',
-    activities: [],
+    activityById: new Map(),
   }
   for (const match of context.matches) {
     if (match.event.type === 'review/start') {
@@ -85,7 +89,7 @@ export const reviewerDefinition: ConversationNodeDefinition<ReviewerState> = {
   start: (_context, match) => {
     if (match.event.type !== 'review/start') throw new Error('reviewer start requires review/start')
     const data: ReviewStartData = match.event.data
-    return { commandId: data.commandId, focus: data.focus, status: 'running', activities: [] }
+    return { commandId: data.commandId, focus: data.focus, status: 'running', activityById: new Map() }
   },
   update: (context, match) => updateState(context.state, match),
   buildViewNode: (context) => {
@@ -95,7 +99,7 @@ export const reviewerDefinition: ConversationNodeDefinition<ReviewerState> = {
     const data: ReviewerChatData = {
       focus: state.focus,
       status: state.status,
-      activities: state.activities,
+      activities: [...state.activityById.values()],
       ...state.text === undefined ? {} : { text: state.text },
     }
     const node: ChatConversationViewNode = {

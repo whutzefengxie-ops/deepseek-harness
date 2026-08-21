@@ -94,6 +94,22 @@ describe('reviewer durable Conversation Definition', () => {
     expect(data(live)).toEqual(data(replay))
   })
 
+  it('replays the maximum producer activity count in first-seen order', () => {
+    const activities = Array.from({ length: 1_000 }, (_, index) => at(index + 2, 'review/activity', {
+      commandId: 'cmd-1',
+      activityId: `item:${String(index)}`,
+      kind: 'command',
+      status: 'completed',
+      detail: `command ${String(index)}`,
+    }))
+
+    const projected = data(assemble([lifecycle[0]!, ...activities]))?.activities
+
+    expect(projected).toHaveLength(1_000)
+    expect(projected?.[0]).toMatchObject({ activityId: 'item:0', detail: 'command 0' })
+    expect(projected?.at(-1)).toMatchObject({ activityId: 'item:999', detail: 'command 999' })
+  })
+
   it.each(['failed', 'cancelled', 'interrupted'] as const)('restores a %s result after refresh', (outcome) => {
     expect(data(assemble([
       lifecycle[0]!,
@@ -138,7 +154,7 @@ describe('reviewer durable Conversation Definition', () => {
   it('keeps state for an unrelated direct update and withholds an empty view context', () => {
     const start = match(1, 'review/start', { commandId: 'cmd-1', focus: '' })
     const state = {
-      commandId: 'cmd-1' as never, focus: '', status: 'running' as const, activities: [],
+      commandId: 'cmd-1' as never, focus: '', status: 'running' as const, activityById: new Map(),
     }
     const unrelated = match(2, 'turn/start', { turn: 1 })
     const complete = {

@@ -62,6 +62,8 @@ const DEFAULT_MAX_TRANSCRIPT_CHARS = 200_000
 const DEFAULT_MAX_PROMPT_BYTES = 1_048_576
 /** Default complete JSONL output cap in bytes. */
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608
+/** Default cap for durable activity transitions emitted by one review. */
+const DEFAULT_MAX_ACTIVITY_EVENTS = 1_000
 /** Default provider grace for process termination and collected-pipe draining. */
 const DEFAULT_SUBPROCESS_GRACE_MS = 3_000
 /** Default maximum elapsed time for one Codex review. */
@@ -95,6 +97,8 @@ export interface Config {
   maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
+  /** Maximum durable activity transitions decoded from one Codex run. */
+  maxActivityEvents?: number
   /** Provider termination and collected-pipe drain grace; Windows force-terminates immediately. */
   subprocessGraceMs?: number
   /** Maximum elapsed time for one review before its process tree is terminated. */
@@ -120,6 +124,7 @@ export const Config: z<Config> = z.object({
   maxTranscriptChars: z.number().step(1).min(1).default(DEFAULT_MAX_TRANSCRIPT_CHARS),
   maxPromptBytes: z.number().step(1).min(1).default(DEFAULT_MAX_PROMPT_BYTES),
   maxOutputBytes: z.number().step(1).min(1).default(DEFAULT_MAX_OUTPUT_BYTES),
+  maxActivityEvents: z.number().step(1).min(1).default(DEFAULT_MAX_ACTIVITY_EVENTS),
   subprocessGraceMs: z.number().step(1).min(1).default(DEFAULT_SUBPROCESS_GRACE_MS),
   timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
   teardownTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TEARDOWN_TIMEOUT_MS),
@@ -311,6 +316,7 @@ async function readJsonl(
   const decoder = new StringDecoder('utf8')
   let carry = ''
   let bytes = 0
+  let activityEvents = 0
   let finalText: string | undefined
   const failures: string[] = []
   const snapshot = (): ParsedOutput => ({
@@ -327,14 +333,18 @@ async function readJsonl(
       const trimmed = line.trim()
       if (trimmed.length === 0) continue
       const progress = parseCodexJsonLine(trimmed)
+      if (progress.finalText !== undefined) finalText = progress.finalText
+      if (progress.failure !== undefined) failures.push(progress.failure)
       if (progress.activity !== undefined) {
+        if (activityEvents >= config.maxActivityEvents) {
+          throw new Error(`Codex output exceeded configured activity-event limit of ${config.maxActivityEvents}`)
+        }
+        activityEvents += 1
         appendReviewEvent(session, 'review/activity', {
           commandId,
           ...progress.activity,
         })
       }
-      if (progress.finalText !== undefined) finalText = progress.finalText
-      if (progress.failure !== undefined) failures.push(progress.failure)
     }
   }
 
@@ -484,7 +494,8 @@ async function runReview(
       throw error
     },
   )
-  const [outputResult, outcomeResult] = await Promise.allSettled([outputPromise, outcomePromise])
+  const subprocessResults = Promise.allSettled([outputPromise, outcomePromise])
+  const [outputResult, outcomeResult] = await waitForSignal(() => subprocessResults, teardownSignal)
   await confirmProcessTreeExit(handle, teardownSignal)
 
   const timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined

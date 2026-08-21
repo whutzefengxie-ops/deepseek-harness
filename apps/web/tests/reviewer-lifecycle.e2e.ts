@@ -38,6 +38,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
   let fakeCodexRoot: string
   let fakeCodexRelease: string
   let fakeCodexStarted: string
+  let reviewerOverlay: string
   let originalPath: string | undefined
 
   const seedConversationAndSubmitReview = async () => {
@@ -62,6 +63,13 @@ describe('web e2e: durable reviewer lifecycle', () => {
     fakeCodexRoot = await mkdtemp(join(tmpdir(), 'dsh-web-reviewer-codex-'))
     fakeCodexRelease = join(fakeCodexRoot, 'release')
     fakeCodexStarted = join(fakeCodexRoot, 'started')
+    reviewerOverlay = join(fakeCodexRoot, 'reviewer.overlay.yml')
+    await writeFile(reviewerOverlay, [
+      '- id: command-reviewer',
+      '  config:',
+      '    maxActivityEvents: 5',
+      '',
+    ].join('\n'))
     const fakeCodex = join(fakeCodexRoot, 'fake-codex.mjs')
     const reviewText = '## Review result\n\nThe browser request is detached from the admitted Codex process, and refresh replay preserves the result.'
     await writeFile(fakeCodex, [
@@ -95,7 +103,7 @@ describe('web e2e: durable reviewer lifecycle', () => {
     }
     originalPath = process.env.PATH
     process.env.PATH = `${fakeCodexRoot}${delimiter}${originalPath ?? ''}`
-    scaffold = await launchWebScaffold()
+    scaffold = await launchWebScaffold({ extraOverlayPath: reviewerOverlay })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
