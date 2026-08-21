@@ -484,6 +484,32 @@ describe('/review durable background lifecycle', () => {
     expect(reads).toBe(2)
   })
 
+  it('reports both flush and exact-read failures at the admission checkpoint', async () => {
+    const test = await harness()
+    seed(test)
+    let flushes = 0
+    test.ctx.on('session/flush', () => {
+      flushes += 1
+      if (flushes === 1) throw new Error('checkpoint listener failed')
+    })
+    const readFrom = test.ctx.sessionPersistence.readFrom.bind(test.ctx.sessionPersistence)
+    let reads = 0
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation(async (id, fromSeq, signal) => {
+      const durable = await readFrom(id, fromSeq, signal)
+      reads += 1
+      return reads === 1 ? { ...durable, events: [] } : durable
+    })
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    expect(test.subprocess.spawns).toEqual([])
+    const end = await reviewEnd(test)
+    expect(end.data.text).toContain('session flush failed (checkpoint listener failed)')
+    expect(end.data.text).toContain('durable session log does not contain review/start')
+    expect(reads).toBe(2)
+  })
+
   it('retains admission when durable reads cannot verify either lifecycle record', async () => {
     const test = await harness()
     seed(test)
@@ -525,7 +551,7 @@ describe('/review durable background lifecycle', () => {
     expect((await reviewEnd(test)).data.outcome).toBe('cancelled')
   })
 
-  it('reports cancellation publication failure during start-persistence teardown', async () => {
+  it('reports cancellation publication failure when teardown cannot reread review/end', async () => {
     const test = await harness()
     seed(test)
     const gate = Promise.withResolvers<undefined>()
@@ -533,7 +559,14 @@ describe('/review durable background lifecycle', () => {
     test.ctx.on('session/flush', async () => {
       flushes += 1
       if (flushes === 1) await gate.promise
-      if (flushes === 2) throw new Error('cancel storage unavailable')
+    })
+    const readFrom = test.ctx.sessionPersistence.readFrom.bind(test.ctx.sessionPersistence)
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation(async (id, fromSeq, signal) => {
+      const durable = await readFrom(id, fromSeq, signal)
+      const expected = test.agent.session.events.find(event => event.seq === fromSeq)
+      return expected?.type === 'review/end'
+        ? { ...durable, events: durable.events.filter(event => event.seq !== fromSeq) }
+        : durable
     })
     const warn = vi.spyOn(test.ctx.logger, 'warn')
 
@@ -547,7 +580,9 @@ describe('/review durable background lifecycle', () => {
     expect((await execution).result.kind).toBe('success')
     await disposal
     expect(test.subprocess.spawns).toEqual([])
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cancel storage unavailable'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+      'durable session log does not contain review/end',
+    ))
   })
 
   it('does not send request-configuration context to Codex as user dialogue', async () => {
@@ -1330,7 +1365,7 @@ describe('/review durable background lifecycle', () => {
     expect(spawnRetry.text).toContain('1 active review')
   })
 
-  it('retains ownership when review/end cannot reach durable storage', async () => {
+  it('releases ownership when review/end is durable despite another flush listener failing', async () => {
     const test = await harness()
     seed(test)
     test.subprocess.manual = true
@@ -1344,7 +1379,40 @@ describe('/review durable background lifecycle', () => {
     await run(test)
     test.subprocess.complete()
     await vi.waitFor(() => {
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('terminal storage unavailable'))
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+        'reached durable storage despite session flush failure: terminal storage unavailable',
+      ))
+    })
+
+    const retry = (await run(test)).result
+    expect(retry.kind).toBe('success')
+    expect(test.subprocess.spawns).toHaveLength(2)
+    test.subprocess.complete()
+    await vi.waitFor(() => {
+      expect(test.agent.session.events.filter(event => event.type === 'review/end')).toHaveLength(2)
+    })
+  })
+
+  it('retains ownership when durable reread omits review/end', async () => {
+    const test = await harness()
+    seed(test)
+    test.subprocess.manual = true
+    const readFrom = test.ctx.sessionPersistence.readFrom.bind(test.ctx.sessionPersistence)
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation(async (id, fromSeq, signal) => {
+      const durable = await readFrom(id, fromSeq, signal)
+      const expected = test.agent.session.events.find(event => event.seq === fromSeq)
+      return expected?.type === 'review/end'
+        ? { ...durable, events: durable.events.filter(event => event.seq !== fromSeq) }
+        : durable
+    })
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    await run(test)
+    test.subprocess.complete()
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+        'durable session log does not contain review/end',
+      ))
     })
 
     const retry = (await run(test)).result

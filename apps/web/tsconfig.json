@@ -100,7 +100,8 @@
     "tests/complex-history.perf.ts",
     "tests/pwsh-terminal.e2e.ts",
     "tests/workflow-run.e2e.ts",
-    "tests/reviewer-lifecycle.e2e.ts"
+    "tests/reviewer-lifecycle.e2e.ts",
+    "tests/reviewer-host-recovery.e2e.ts"
   ],
   "references": [
     {

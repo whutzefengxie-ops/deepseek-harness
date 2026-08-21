@@ -88,6 +88,7 @@
     "apps/web/tests/pwsh-terminal.e2e.ts",
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/tests/reviewer-lifecycle.e2e.ts",
+    "apps/web/tests/reviewer-host-recovery.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
     "examples/*/src/**/*.ts",

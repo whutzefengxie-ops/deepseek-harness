@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-command-reviewer",
   "description": "Human /review command: reviews the current session's agent output with the local Codex CLI",
-  "version": "0.1.1-rc.1",
+  "version": "0.1.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

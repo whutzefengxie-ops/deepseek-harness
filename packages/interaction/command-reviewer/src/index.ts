@@ -166,16 +166,59 @@ function appendReviewEvent<T extends 'review/start' | 'review/activity' | 'revie
 
 type ReviewLifecycleEvent = SessionEvent<'review/start'> | SessionEvent<'review/end'>
 
+interface ReviewFlushFailure {
+  readonly reason: unknown
+}
+
+function throwReviewLifecycleFailure(
+  flushFailure: ReviewFlushFailure | undefined,
+  verificationFailure: unknown,
+  expected: ReviewLifecycleEvent,
+): never {
+  if (flushFailure === undefined) throw verificationFailure
+  throw new AggregateError(
+    [flushFailure.reason, verificationFailure],
+    `command-reviewer: session flush failed (${renderThrown(flushFailure.reason)}) and ${expected.type} durability verification failed (${renderThrown(verificationFailure)})`,
+  )
+}
+
+/** Flush every listener, then independently verify the expected lifecycle event in durable storage. */
 async function flushReviewLifecycle(
   ctx: Context,
   session: Session,
   expected: ReviewLifecycleEvent,
-): Promise<void> {
-  await ctx.sessions.flush(session)
-  const stored = (await ctx.sessionPersistence.readFrom(session.id, expected.seq)).events
-    .find(event => event.seq === expected.seq)
+): Promise<ReviewFlushFailure | undefined> {
+  let flushFailure: ReviewFlushFailure | undefined
+  try {
+    await ctx.sessions.flush(session)
+  } catch (reason: unknown) {
+    flushFailure = { reason }
+  }
+  let stored: SessionEvent | undefined
+  try {
+    stored = (await ctx.sessionPersistence.readFrom(session.id, expected.seq)).events
+      .find(event => event.seq === expected.seq)
+  } catch (error: unknown) {
+    throwReviewLifecycleFailure(flushFailure, error, expected)
+  }
   if (!isDeepStrictEqual(stored, expected)) {
-    throw new Error(`command-reviewer: durable session log does not contain ${expected.type} seq ${expected.seq}`)
+    throwReviewLifecycleFailure(
+      flushFailure,
+      new Error(`command-reviewer: durable session log does not contain ${expected.type} seq ${expected.seq}`),
+      expected,
+    )
+  }
+  return flushFailure
+}
+
+async function flushReviewEnd(
+  ctx: Context,
+  session: Session,
+  terminal: SessionEvent<'review/end'>,
+): Promise<void> {
+  const failure = await flushReviewLifecycle(ctx, session, terminal)
+  if (failure !== undefined) {
+    ctx.logger.warn(`command-reviewer: review/end seq ${terminal.seq} reached durable storage despite session flush failure: ${renderThrown(failure.reason)}`)
   }
 }
 
@@ -350,7 +393,8 @@ async function flushReviewStart(
   owner: ReviewOwner,
   start: SessionEvent<'review/start'>,
 ): Promise<boolean> {
-  await flushReviewLifecycle(ctx, session, start)
+  const failure = await flushReviewLifecycle(ctx, session, start)
+  if (failure !== undefined) throw failure.reason
   return owner.stopping
 }
 
@@ -444,7 +488,7 @@ async function runReview(
       ? { commandId, outcome: 'completed', text: completedText }
       : { commandId, outcome: 'failed', text: renderFailedReview(completedText, diagnostics) }
   const terminal = appendReviewEvent(session, 'review/end', end)
-  await flushReviewLifecycle(ctx, session, terminal)
+  await flushReviewEnd(ctx, session, terminal)
 }
 
 /** Register the `/review` command and its settings section. */
@@ -570,7 +614,7 @@ export function apply(ctx: Context, config: Config): void {
           const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
             commandId, outcome: 'cancelled', text: renderCancelledReview([]),
           })
-          await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
+          await flushReviewEnd(ctx, invocation.agent.session, terminal)
           settleOperation()
         } catch (error: unknown) {
           ctx.logger.warn(`command-reviewer: cancelled review publication remains owned: ${renderThrown(error)}`)
@@ -584,7 +628,7 @@ export function apply(ctx: Context, config: Config): void {
         const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
           commandId, outcome: 'failed', text,
         })
-        await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
+        await flushReviewEnd(ctx, invocation.agent.session, terminal)
         settleOperation()
       } catch (terminalError: unknown) {
         const failure = new AggregateError(
@@ -625,7 +669,7 @@ export function apply(ctx: Context, config: Config): void {
         const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
           commandId, outcome: cancelled ? 'cancelled' : 'failed', text,
         })
-        await flushReviewLifecycle(ctx, invocation.agent.session, terminal)
+        await flushReviewEnd(ctx, invocation.agent.session, terminal)
         settleOperation()
       } catch (terminalError: unknown) {
         ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(terminalError)}`)
