@@ -40,7 +40,7 @@ codex exec --json --color never --ephemeral --skip-git-repo-check -s <sandbox> [
 
 ## 验证
 
-组合后的 Web 生命周期测试会在原生 Windows 上通过 Chromium 提交命令并检查持久化会话日志，证明受 Job 持有的 Codex 启动、公开活动、完成与刷新重放。进程级 Web 场景会提交 `/review`、从外部强制终止构建后的宿主、证明 Job 移除假 Codex 根进程及其脱离后代、使用同一持久化根重启，并要求重复刷新后仍恰好只有一条 interrupted 终态事件与命令确认。在 POSIX 上，生命周期测试改为证明默认命令目录和设置命名空间不包含不受支持的审查者，且刷新前后都不会出现 Codex 进程或审查卡片。[Windows CI 拓扑](../process/2026-08-08-native-windows-pull-request-ci.md)负责聚焦的必需原生结果与完整原生清单。
+组合后的 Web 生命周期测试会在原生 Windows 上通过 Chromium 提交命令并检查持久化会话日志，证明受 Job 持有的 Codex 启动、公开活动、完成与刷新重放。进程级 Web 场景会提交 `/review`、从外部强制终止构建后的宿主、证明 Job 移除假 Codex 根进程及其脱离后代、使用同一持久化根重启，并要求重复刷新后仍恰好只有一条 interrupted 终态事件与命令确认。在 POSIX 上，生命周期测试改为证明默认命令目录和设置命名空间不包含不受支持的审查者，且刷新前后都不会出现 Codex 进程或审查卡片。[Windows CI 拓扑](../process/2026-08-08-native-windows-pull-request-ci.zh.md)负责聚焦的必需原生结果与完整原生清单。
 
 ## 备选方案
 

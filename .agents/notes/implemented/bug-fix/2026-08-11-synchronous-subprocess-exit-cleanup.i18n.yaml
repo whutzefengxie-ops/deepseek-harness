@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md
 2026-08-11-synchronous-subprocess-exit-cleanup.md: 08476e7f373ad15aa1707755dda09514ef63c4ed
-2026-08-11-synchronous-subprocess-exit-cleanup.zh.md: 073ce59a0d6b3253e45f66cd0c99b77524ab519f
+2026-08-11-synchronous-subprocess-exit-cleanup.zh.md: 9a6df9efb49a972217a44be255abe886eb5d9f3e

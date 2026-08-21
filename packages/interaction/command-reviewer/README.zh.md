@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-面向本地 Codex CLI 的人工 `/review` 命令（审查者）。该插件通过 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令，因此所有已组合的命令适配器都能发现并执行它，而不占用模型回合。每次运行都会把接收会话推导出的对话投影为一份审查提示词，通过 [`ctx.subprocess`](../../subprocess/subprocess/README.md) 启动一次非交互的 `codex exec --json`，立即确认持久化的启动记录，并把真实 Codex 进度与最终审查结果写入会话日志。
+面向本地 Codex CLI 的人工 `/review` 命令（审查者）。该插件通过 [`ctx.commands`](../../interaction/commands/README.zh.md) 注册一个全局命令，因此所有已组合的命令适配器都能发现并执行它，而不占用模型回合。每次运行都会把接收会话推导出的对话投影为一份审查提示词，通过 [`ctx.subprocess`](../../subprocess/subprocess/README.zh.md) 启动一次非交互的 `codex exec --json`，立即确认持久化的启动记录，并把真实 Codex 进度与最终审查结果写入会话日志。
 
 ## 命令约定
 
