@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-codex-reviewer-command.md
-2026-08-19-codex-reviewer-command.md: ce844a817e9e4333f2332e3de5a77448d60c6862
-2026-08-19-codex-reviewer-command.zh.md: 54b6c0f4fe58f1eb57adc845eae3127a695f720d
+2026-08-19-codex-reviewer-command.md: 4ede5b7089fd0450c00cfeb68cdf0006e7f8b1fb
+2026-08-19-codex-reviewer-command.zh.md: 3775775e18251dbbc4d40d4c0297727c27106e40

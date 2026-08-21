@@ -502,10 +502,12 @@ export interface Config {
   maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
-  /** Escalation grace in milliseconds for process-tree termination. */
-  terminateGraceMs?: number
+  /** Provider termination and collected-pipe drain grace; Windows force-terminates immediately. */
+  subprocessGraceMs?: number
   /** Maximum elapsed time for one review before its process tree is terminated. */
   timeoutMs?: number
+  /** Maximum elapsed time from owner teardown through process and lifecycle quiescence. */
+  teardownTimeoutMs?: number
   /** Maximum reviews admitted concurrently for one Agent. */
   maxConcurrentReviews?: number
 }
@@ -517,7 +519,7 @@ export type CodexThinkingEffort = (typeof CODEX_THINKING_EFFORTS)[number]
 export type CodexSandbox = (typeof CODEX_SANDBOX_MODES)[number]
 ```
 
-来源：[`packages/interaction/command-reviewer/src/index.ts:75`](../packages/interaction/command-reviewer/src/index.ts)
+来源：[`packages/interaction/command-reviewer/src/index.ts:79`](../packages/interaction/command-reviewer/src/index.ts)
 
 <a id="deepseek-aidsh-compaction-basic"></a>
 

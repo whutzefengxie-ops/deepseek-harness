@@ -44,6 +44,10 @@ function reviewJson(text = 'Review text.'): string {
   ].map(value => JSON.stringify(value)).join('\n') + '\n'
 }
 
+function rejectionError(reason: unknown): Error {
+  return reason instanceof Error ? reason : new Error(String(reason))
+}
+
 class StubSubprocess extends SubprocessRuntime {
   spawns: SubprocessSpawnSpec[] = []
   handles: SubprocessHandle[] = []
@@ -111,9 +115,26 @@ class StubSubprocess extends SubprocessRuntime {
     })
     const waitGate = this.manualWait ? Promise.withResolvers<boolean>() : undefined
     if (waitGate !== undefined) this.waitGates.push(waitGate)
-    const waitForExit = vi.fn(() => this.waitError === undefined
-      ? waitGate?.promise ?? Promise.resolve(this.waitResult)
-      : Promise.reject(this.waitError))
+    const waitForExit = vi.fn((signal?: AbortSignal) => {
+      if (this.waitError !== undefined) return Promise.reject(this.waitError)
+      const waiting = waitGate?.promise ?? Promise.resolve(this.waitResult)
+      if (signal === undefined) return waiting
+      return new Promise<boolean>((resolve, reject) => {
+        const abort = (): void => { resolve(false) }
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) abort()
+        void waiting.then(
+          (result) => {
+            signal.removeEventListener('abort', abort)
+            resolve(result)
+          },
+          (error: unknown) => {
+            signal.removeEventListener('abort', abort)
+            reject(rejectionError(error))
+          },
+        )
+      })
+    })
     this.terminations.push(terminate)
     this.waits.push(waitForExit)
     spec.signal?.addEventListener('abort', terminate, { once: true })
@@ -245,16 +266,22 @@ describe('@deepseek-ai/dsh-command-reviewer registration', () => {
     expect(test.ctx.commands.find(test.agent, 'review')).toBeUndefined()
   })
 
-  it('rejects a termination grace outside the Node timer range', async () => {
+  it('rejects a subprocess grace outside the Node timer range', async () => {
     const ctx = await runtimeContext(false)
-    await expect(ctx.plugin(commandReviewer, { terminateGraceMs: MAX_TIMER_DELAY_MS + 1 }))
-      .rejects.toThrow(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+    await expect(ctx.plugin(commandReviewer, { subprocessGraceMs: MAX_TIMER_DELAY_MS + 1 }))
+      .rejects.toThrow(`command-reviewer: subprocessGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   })
 
   it('rejects a review timeout outside the Node timer range', async () => {
     const ctx = await runtimeContext(false)
     await expect(ctx.plugin(commandReviewer, { timeoutMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`command-reviewer: timeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  })
+
+  it('rejects a teardown timeout outside the Node timer range', async () => {
+    const ctx = await runtimeContext(false)
+    await expect(ctx.plugin(commandReviewer, { teardownTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .rejects.toThrow(`command-reviewer: teardownTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   })
 })
 
@@ -400,6 +427,7 @@ describe('/review durable background lifecycle', () => {
     expect(spec?.cwd).toBe('C:\\work\\repo')
     expect(spec?.stdio.stdout).toBe('pipe')
     expect(spec?.hostDeath).toBe('terminate')
+    expect(spec?.graceMs).toBe(3_000)
     expect(spec?.signal).toBeInstanceOf(AbortSignal)
     if (typeof spec?.stdio.stdin !== 'object') throw new Error('expected batch stdin')
     expect(spec.stdio.stdin.data).toContain('Reviewer focus for this run:\n审查上面的方案和代码修改')
@@ -551,6 +579,24 @@ describe('/review durable background lifecycle', () => {
     expect((await reviewEnd(test)).data.outcome).toBe('cancelled')
   })
 
+  it('publishes cancellation when start flush synchronously initiates owner teardown', async () => {
+    const test = await harness()
+    seed(test)
+    let disposal: Promise<void> | undefined
+    let flushes = 0
+    test.ctx.on('session/flush', () => {
+      flushes += 1
+      if (flushes === 1) disposal = test.plugin.dispose()
+    })
+
+    const execution = await run(test)
+
+    expect(execution.result.kind).toBe('success')
+    await expect(disposal).resolves.toBeUndefined()
+    expect(test.subprocess.spawns).toEqual([])
+    expect((await reviewEnd(test)).data.outcome).toBe('cancelled')
+  })
+
   it('reports cancellation publication failure when teardown cannot reread review/end', async () => {
     const test = await harness()
     seed(test)
@@ -583,6 +629,80 @@ describe('/review durable background lifecycle', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(
       'durable session log does not contain review/end',
     ))
+  })
+
+  it('bounds session flush listeners that never settle during admission teardown', async () => {
+    const test = await harness({ config: { teardownTimeoutMs: 10 } })
+    seed(test)
+    const flushStarted = Promise.withResolvers<undefined>()
+    test.ctx.on('session/flush', () => {
+      flushStarted.resolve(undefined)
+      return new Promise<void>(() => {})
+    })
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+
+    const execution = run(test)
+    await flushStarted.promise
+    const disposal = test.plugin.dispose()
+
+    expect((await execution).result.kind).toBe('success')
+    await disposal
+    expect(test.subprocess.spawns).toEqual([])
+    expect(warn.mock.calls.some(([error]) => (
+      String(error).includes('COMMAND_REVIEW_TEARDOWN_TIMEOUT after 10ms')
+    ))).toBe(true)
+  })
+
+  it('cancels a hanging admission read and bounds the terminal read during teardown', async () => {
+    const test = await harness({ config: { teardownTimeoutMs: 10 } })
+    seed(test)
+    const signals: AbortSignal[] = []
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation((_id, _fromSeq, signal) => {
+      if (signal === undefined) return Promise.reject(new Error('readFrom signal missing'))
+      signals.push(signal)
+      return new Promise((_, reject) => {
+        const abort = (): void => { reject(rejectionError(signal.reason)) }
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) abort()
+      })
+    })
+
+    const execution = run(test)
+    await vi.waitFor(() => { expect(signals).toHaveLength(1) })
+    const disposal = test.plugin.dispose()
+
+    expect((await execution).result.kind).toBe('success')
+    await disposal
+    expect(signals).toHaveLength(2)
+    expect(signals.every(signal => signal.aborted)).toBe(true)
+    expect(test.subprocess.spawns).toEqual([])
+  })
+
+  it('bounds a hanging terminal read after the process exits', async () => {
+    const test = await harness({ config: { teardownTimeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    const readFrom = test.ctx.sessionPersistence.readFrom.bind(test.ctx.sessionPersistence)
+    let reads = 0
+    let terminalSignal: AbortSignal | undefined
+    vi.spyOn(test.ctx.sessionPersistence, 'readFrom').mockImplementation(async (id, fromSeq, signal) => {
+      reads += 1
+      if (reads === 1) return await readFrom(id, fromSeq, signal)
+      if (signal === undefined) throw new Error('terminal readFrom signal missing')
+      terminalSignal = signal
+      return await new Promise((_, reject) => {
+        const abort = (): void => { reject(rejectionError(signal.reason)) }
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) abort()
+      })
+    })
+
+    await run(test)
+    test.subprocess.complete()
+    await vi.waitFor(() => { expect(reads).toBe(2) })
+
+    await test.plugin.dispose()
+    expect(terminalSignal?.aborted).toBe(true)
   })
 
   it('does not send request-configuration context to Codex as user dialogue', async () => {
@@ -1277,6 +1397,24 @@ describe('/review durable background lifecycle', () => {
     expect(disposed).toBe(true)
     expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
     expect((await reviewEnd(test)).data).toMatchObject({ outcome: 'cancelled' })
+  })
+
+  it('bounds process-tree exit confirmation during teardown', async () => {
+    const test = await harness({ config: { teardownTimeoutMs: 10 } })
+    seed(test)
+    test.subprocess.manual = true
+    test.subprocess.manualWait = true
+    const warn = vi.spyOn(test.ctx.logger, 'warn')
+    await run(test)
+
+    await test.plugin.dispose()
+
+    expect(test.subprocess.terminations[0]).toHaveBeenCalledOnce()
+    expect(test.subprocess.waits[0]).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(test.agent.session.events.some(event => event.type === 'review/end')).toBe(false)
+    expect(warn.mock.calls.some(([error]) => (
+      String(error).includes('process-tree exit wait ended without confirming exit')
+    ))).toBe(true)
   })
 
   it('rejects teardown without a terminal record when process-tree exit cannot be confirmed', async () => {

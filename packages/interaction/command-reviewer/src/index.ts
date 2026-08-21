@@ -62,14 +62,18 @@ const DEFAULT_MAX_TRANSCRIPT_CHARS = 200_000
 const DEFAULT_MAX_PROMPT_BYTES = 1_048_576
 /** Default complete JSONL output cap in bytes. */
 const DEFAULT_MAX_OUTPUT_BYTES = 8_388_608
-/** Default escalation grace in milliseconds for process-tree termination. */
-const DEFAULT_TERMINATE_GRACE_MS = 3_000
+/** Default provider grace for process termination and collected-pipe draining. */
+const DEFAULT_SUBPROCESS_GRACE_MS = 3_000
 /** Default maximum elapsed time for one Codex review. */
 const DEFAULT_TIMEOUT_MS = 3_600_000
+/** Default bound from owner teardown through review quiescence. */
+const DEFAULT_TEARDOWN_TIMEOUT_MS = 10_000
 /** Default concurrent review limit for one Agent. */
 const DEFAULT_MAX_CONCURRENT_REVIEWS = 1
 /** Timeout identity used to distinguish elapsed deadlines from owner teardown. */
 const REVIEW_TIMEOUT = 'COMMAND_REVIEW_TIMEOUT'
+/** Timeout identity for owner teardown that cannot reach review quiescence. */
+const REVIEW_TEARDOWN_TIMEOUT = 'COMMAND_REVIEW_TEARDOWN_TIMEOUT'
 
 /** User-settings section of the reviewer command. */
 export interface Config {
@@ -91,10 +95,12 @@ export interface Config {
   maxPromptBytes?: number
   /** Complete Codex JSONL output cap in bytes. */
   maxOutputBytes?: number
-  /** Escalation grace in milliseconds for process-tree termination. */
-  terminateGraceMs?: number
+  /** Provider termination and collected-pipe drain grace; Windows force-terminates immediately. */
+  subprocessGraceMs?: number
   /** Maximum elapsed time for one review before its process tree is terminated. */
   timeoutMs?: number
+  /** Maximum elapsed time from owner teardown through process and lifecycle quiescence. */
+  teardownTimeoutMs?: number
   /** Maximum reviews admitted concurrently for one Agent. */
   maxConcurrentReviews?: number
 }
@@ -114,8 +120,9 @@ export const Config: z<Config> = z.object({
   maxTranscriptChars: z.number().step(1).min(1).default(DEFAULT_MAX_TRANSCRIPT_CHARS),
   maxPromptBytes: z.number().step(1).min(1).default(DEFAULT_MAX_PROMPT_BYTES),
   maxOutputBytes: z.number().step(1).min(1).default(DEFAULT_MAX_OUTPUT_BYTES),
-  terminateGraceMs: z.number().step(1).min(1).default(DEFAULT_TERMINATE_GRACE_MS),
+  subprocessGraceMs: z.number().step(1).min(1).default(DEFAULT_SUBPROCESS_GRACE_MS),
   timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+  teardownTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TEARDOWN_TIMEOUT_MS),
   maxConcurrentReviews: z.number().step(1).min(1).default(DEFAULT_MAX_CONCURRENT_REVIEWS),
 })
 
@@ -134,15 +141,21 @@ const CANCELLED: CommandResult = { kind: 'error', text: 'Review cancelled.' }
 const INTERRUPTED_REVIEW_TEXT = 'Review interrupted because its previous host stopped before recording completion.'
 const FORKED_REVIEW_TEXT = 'Review was not continued in this fork; the source session review is unaffected.'
 function assertConfig(config: Required<Config>): void {
-  if (config.terminateGraceMs > MAX_TIMER_DELAY_MS) {
-    throw new Error(`command-reviewer: terminateGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  if (config.subprocessGraceMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`command-reviewer: subprocessGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   }
   if (config.timeoutMs > MAX_TIMER_DELAY_MS) {
     throw new Error(`command-reviewer: timeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
   }
+  if (config.teardownTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(`command-reviewer: teardownTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+  }
 }
 
 function renderThrown(error: unknown): string {
+  if (error instanceof AggregateError) {
+    return `${error.message}: ${error.errors.map(renderThrown).join('; ')}`
+  }
   return error instanceof Error ? error.message : String(error)
 }
 
@@ -182,21 +195,34 @@ function throwReviewLifecycleFailure(
   )
 }
 
+async function waitForSignal<T>(start: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  const aborted = Promise.withResolvers<never>()
+  const abort = (): void => { aborted.reject(signal.reason) }
+  signal.addEventListener('abort', abort, { once: true })
+  try {
+    return await Promise.race([start(), aborted.promise])
+  } finally {
+    signal.removeEventListener('abort', abort)
+  }
+}
+
 /** Flush every listener, then independently verify the expected lifecycle event in durable storage. */
 async function flushReviewLifecycle(
   ctx: Context,
   session: Session,
   expected: ReviewLifecycleEvent,
+  signal: AbortSignal,
 ): Promise<ReviewFlushFailure | undefined> {
   let flushFailure: ReviewFlushFailure | undefined
   try {
-    await ctx.sessions.flush(session)
+    await waitForSignal(() => ctx.sessions.flush(session), signal)
   } catch (reason: unknown) {
     flushFailure = { reason }
   }
   let stored: SessionEvent | undefined
   try {
-    stored = (await ctx.sessionPersistence.readFrom(session.id, expected.seq)).events
+    stored = (await ctx.sessionPersistence.readFrom(session.id, expected.seq, signal)).events
       .find(event => event.seq === expected.seq)
   } catch (error: unknown) {
     throwReviewLifecycleFailure(flushFailure, error, expected)
@@ -215,8 +241,9 @@ async function flushReviewEnd(
   ctx: Context,
   session: Session,
   terminal: SessionEvent<'review/end'>,
+  signal: AbortSignal,
 ): Promise<void> {
-  const failure = await flushReviewLifecycle(ctx, session, terminal)
+  const failure = await flushReviewLifecycle(ctx, session, terminal, signal)
   if (failure !== undefined) {
     ctx.logger.warn(`command-reviewer: review/end seq ${terminal.seq} reached durable storage despite session flush failure: ${renderThrown(failure.reason)}`)
   }
@@ -349,7 +376,10 @@ function exitDiagnostic(handle: SubprocessHandle, outcome: SubprocessOutcome): s
 
 interface ReviewOperation {
   readonly controller: AbortController
+  readonly teardownSignal: AbortSignal
   readonly settled: Promise<void>
+  readonly stop: () => void
+  readonly finish: () => void
   failure?: unknown
 }
 
@@ -374,7 +404,7 @@ function ensureOwner(
   owner.cleanup = agent.ctx.effect(() => async () => {
     owner.stopping = true
     const operations = [...owner.active]
-    for (const operation of operations) operation.controller.abort()
+    for (const operation of operations) operation.stop()
     await Promise.all(operations.map(operation => operation.settled))
     const failures = operations.flatMap(operation => operation.failure === undefined ? [] : [operation.failure])
     if (failures.length > 0) {
@@ -390,16 +420,15 @@ function ensureOwner(
 async function flushReviewStart(
   ctx: Context,
   session: Session,
-  owner: ReviewOwner,
   start: SessionEvent<'review/start'>,
-): Promise<boolean> {
-  const failure = await flushReviewLifecycle(ctx, session, start)
+  signal: AbortSignal,
+): Promise<void> {
+  const failure = await flushReviewLifecycle(ctx, session, start, signal)
   if (failure !== undefined) throw failure.reason
-  return owner.stopping
 }
 
-async function confirmProcessTreeExit(handle: SubprocessHandle): Promise<void> {
-  if (!await handle.waitForExit()) {
+async function confirmProcessTreeExit(handle: SubprocessHandle, signal: AbortSignal): Promise<void> {
+  if (!await handle.waitForExit(signal)) {
     throw new Error('Codex process-tree exit wait ended without confirming exit')
   }
 }
@@ -427,6 +456,7 @@ async function runReview(
   commandId: ReviewStartData['commandId'],
   config: Required<Config>,
   signal: AbortSignal,
+  teardownSignal: AbortSignal,
 ): Promise<void> {
   let output: ParsedOutput
   let terminationRequested = false
@@ -455,7 +485,7 @@ async function runReview(
     },
   )
   const [outputResult, outcomeResult] = await Promise.allSettled([outputPromise, outcomePromise])
-  await confirmProcessTreeExit(handle)
+  await confirmProcessTreeExit(handle, teardownSignal)
 
   const timedOut = timeoutOf(signal, REVIEW_TIMEOUT) !== undefined
   const cancelled = signal.aborted && !timedOut
@@ -488,7 +518,7 @@ async function runReview(
       ? { commandId, outcome: 'completed', text: completedText }
       : { commandId, outcome: 'failed', text: renderFailedReview(completedText, diagnostics) }
   const terminal = appendReviewEvent(session, 'review/end', end)
-  await flushReviewEnd(ctx, session, terminal)
+  await flushReviewEnd(ctx, session, terminal, teardownSignal)
 }
 
 /** Register the `/review` command and its settings section. */
@@ -537,13 +567,31 @@ export function apply(ctx: Context, config: Config): void {
     }
 
     const controller = new AbortController()
+    const teardownController = new AbortController()
     const settlement = Promise.withResolvers<void>()
-    const operation: ReviewOperation = { controller, settled: settlement.promise }
+    let teardownDeadline: ReturnType<typeof deadline> | undefined
+    const operation: ReviewOperation = {
+      controller,
+      teardownSignal: teardownController.signal,
+      settled: settlement.promise,
+      stop: () => {
+        /* v8 ignore next -- Agent and plugin cleanup may converge on the same operation stop. */
+        if (teardownDeadline === undefined) {
+          const activeDeadline = deadline(undefined, resolved.teardownTimeoutMs, REVIEW_TEARDOWN_TIMEOUT)
+          teardownDeadline = activeDeadline
+          const abort = (): void => { teardownController.abort(activeDeadline.signal.reason) }
+          activeDeadline.signal.addEventListener('abort', abort, { once: true })
+        }
+        controller.abort()
+      },
+      finish: () => { teardownDeadline?.[Symbol.dispose]() },
+    }
     let operationSettled = false
     const settleOperation = (): void => {
       /* v8 ignore next -- spawn/admission paths and the background continuation may converge during teardown. */
       if (operationSettled) return
       operationSettled = true
+      operation.finish()
       owner.active.delete(operation)
       settlement.resolve()
     }
@@ -551,6 +599,7 @@ export function apply(ctx: Context, config: Config): void {
       /* v8 ignore next -- a background rejection and owner teardown may converge on one operation. */
       if (operationSettled) return
       operationSettled = true
+      operation.finish()
       operation.failure = error
       settlement.resolve()
     }
@@ -609,33 +658,24 @@ export function apply(ctx: Context, config: Config): void {
       throw error
     }
     try {
-      if (await flushReviewStart(ctx, invocation.agent.session, owner, start)) {
-        try {
-          const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
-            commandId, outcome: 'cancelled', text: renderCancelledReview([]),
-          })
-          await flushReviewEnd(ctx, invocation.agent.session, terminal)
-          settleOperation()
-        } catch (error: unknown) {
-          ctx.logger.warn(`command-reviewer: cancelled review publication remains owned: ${renderThrown(error)}`)
-          failOperation(error)
-        }
-        return { kind: 'success', sourceEventSeq: start.seq }
-      }
+      await flushReviewStart(ctx, invocation.agent.session, start, controller.signal)
     } catch (error: unknown) {
-      const text = `The review could not persist its start: ${renderThrown(error)}`
+      const cancelled = ownerStopped()
+      const text = cancelled
+        ? renderCancelledReview([])
+        : `The review could not persist its start: ${renderThrown(error)}`
       try {
         const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
-          commandId, outcome: 'failed', text,
+          commandId, outcome: cancelled ? 'cancelled' : 'failed', text,
         })
-        await flushReviewEnd(ctx, invocation.agent.session, terminal)
+        await flushReviewEnd(ctx, invocation.agent.session, terminal, operation.teardownSignal)
         settleOperation()
       } catch (terminalError: unknown) {
         const failure = new AggregateError(
           [error, terminalError],
           'command-reviewer: review/start durability and terminal publication failed',
         )
-        ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(failure)}`)
+        ctx.logger.warn(`command-reviewer: ${cancelled ? 'cancelled' : 'failed'} review publication remains owned: ${renderThrown(failure)}`)
         failOperation(failure)
       }
       return { kind: 'success', sourceEventSeq: start.seq }
@@ -652,7 +692,7 @@ export function apply(ctx: Context, config: Config): void {
           stderr: { maxBytes: STDERR_TAIL_BYTES },
         },
         hostDeath: 'terminate',
-        graceMs: resolved.terminateGraceMs,
+        graceMs: resolved.subprocessGraceMs,
         signal: reviewDeadline.signal,
         ...launch.env === undefined ? {} : { env: launch.env },
       })
@@ -669,7 +709,7 @@ export function apply(ctx: Context, config: Config): void {
         const terminal = appendReviewEvent(invocation.agent.session, 'review/end', {
           commandId, outcome: cancelled ? 'cancelled' : 'failed', text,
         })
-        await flushReviewEnd(ctx, invocation.agent.session, terminal)
+        await flushReviewEnd(ctx, invocation.agent.session, terminal, operation.teardownSignal)
         settleOperation()
       } catch (terminalError: unknown) {
         ctx.logger.warn(`command-reviewer: failed review publication remains owned: ${renderThrown(terminalError)}`)
@@ -680,6 +720,7 @@ export function apply(ctx: Context, config: Config): void {
 
     const settled = runReview(
       ctx, handle, invocation.agent.session, commandId, resolved, reviewDeadline.signal,
+      operation.teardownSignal,
     ).finally(() => { reviewDeadline[Symbol.dispose]() })
     // The admitted process follows its elapsed deadline and Agent owner, not
     // the browser Remote signal.
