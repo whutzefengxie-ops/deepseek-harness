@@ -1,5 +1,6 @@
-// Keyless shipped-Web coverage for the real /review command, local subprocess,
-// durable replay, presentation, and Host recovery. Only the external Codex CLI
+// Keyless shipped-Web coverage for the real Windows /review command, local
+// subprocess, durable replay, presentation, Host recovery, and the POSIX
+// composition that omits the unsupported command. Only the external Codex CLI
 // is deterministic; Chromium, HTTP/RPC, command dispatch, persistence, and the
 // shipped subprocess provider run as composed production code.
 import { existsSync } from 'node:fs'
@@ -23,11 +24,7 @@ import type {} from '@deepseek-ai/dsh-command-reviewer/types'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/reviewer-lifecycle', import.meta.url))
 const COMPLETED_UI_EXPECTED = fileURLToPath(new URL('./snapshots/reviewer-lifecycle/ui.expected.md', import.meta.url))
-const UNSUPPORTED_UI_EXPECTED = fileURLToPath(
-  new URL('./snapshots/reviewer-lifecycle/posix-unsupported.expected.md', import.meta.url),
-)
 const MODE = webSnapshotMode()
-const POSIX_FAILURE = 'The review could not start: subprocess-local: host-death termination requires Windows Job Object ownership'
 
 describe('web e2e: durable reviewer lifecycle', () => {
   let scaffold: WebScaffold
@@ -42,6 +39,10 @@ describe('web e2e: durable reviewer lifecycle', () => {
   const seedConversationAndSubmitReview = async () => {
     const session = scaffold.ctx.sessions.list()[0]
     if (session === undefined) throw new Error('fresh workspace did not create a session')
+    const agent = scaffold.ctx.agents.get(session.id)
+    if (agent === undefined) throw new Error('fresh workspace did not create an agent')
+    expect(scaffold.ctx.commands.list(agent).map(command => command.name)).toContain('review')
+    expect(scaffold.ctx.settings.describe().map(descriptor => String(descriptor.ns))).toContain('command-reviewer')
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'Please implement the concurrency fix.' }],
       source: { kind: 'user' },
@@ -161,52 +162,66 @@ describe('web e2e: durable reviewer lifecycle', () => {
   )
 
   it.skipIf(process.platform === 'win32')(
-    'rejects /review before Codex starts when the local POSIX provider cannot contain daemonized descendants',
+    'omits /review and its settings when the POSIX provider cannot own daemonized descendants',
     async () => {
       onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-posix-unsupported'))
-      const { input, session } = await seedConversationAndSubmitReview()
-
-      await page.locator('[data-reviewer][data-review-status="failed"]').waitFor({ timeout: 15_000 })
-      await expect.poll(() => input.inputValue()).toBe('')
-      expect(await input.isEnabled()).toBe(true)
-      expect(await page.getByText(POSIX_FAILURE, { exact: true }).count()).toBe(1)
+      const session = scaffold.ctx.sessions.list()[0]
+      if (session === undefined) throw new Error('fresh workspace did not create a session')
+      const agent = scaffold.ctx.agents.get(session.id)
+      if (agent === undefined) throw new Error('fresh workspace did not create an agent')
+      expect(scaffold.ctx.commands.list(agent).map(command => command.name)).not.toContain('review')
+      expect(scaffold.ctx.settings.describe().map(descriptor => String(descriptor.ns)))
+        .not.toContain('command-reviewer')
       expect(existsSync(fakeCodexStarted)).toBe(false)
-      expect(session.events.filter(event => event.type === 'review/activity')).toHaveLength(0)
-      await expect(scaffold.ctx.sessions.flush(session)).resolves.toBe(true)
-      const persisted = await scaffold.ctx.sessionPersistence.inspect(session.id)
-      expect(persisted.events.filter(event => event.type === 'command/run')).toMatchObject([{
-        data: { name: 'review' },
-      }])
-      expect(persisted.events.filter(event => event.type === 'review/start')).toMatchObject([{
-        data: { request: { hostDeath: 'terminate' } },
-      }])
-      expect(persisted.events.filter(event => event.type === 'review/activity')).toHaveLength(0)
-      expect(persisted.events.filter(event => event.type === 'review/end')).toMatchObject([{
-        data: { outcome: 'failed', text: POSIX_FAILURE },
-      }])
 
-      const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-      await compareOrRefreshGolden(UNSUPPORTED_UI_EXPECTED, snapshot, MODE)
+      await page.getByRole('button', { name: 'Commands' }).click()
+      const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+      await menu.waitFor({ timeout: 10_000 })
+      expect(await menu.getByRole('option', { name: /^review\b/i }).count()).toBe(0)
+      await page.locator('textarea').first().press('Escape')
+      expect(await page.locator('[data-reviewer]').count()).toBe(0)
+
+      await page.getByRole('button', { name: 'Settings', exact: true }).click()
+      const settings = page.getByRole('dialog', { name: 'Settings' })
+      await settings.getByRole('button', { name: 'Plugins', exact: true }).click()
+      await expect.poll(
+        () => settings.getByRole('tab', { name: 'Plugin configuration', exact: true }).getAttribute('aria-selected'),
+        { timeout: 5_000 },
+      ).toBe('true')
+      expect(await settings.getByText('Reviewer', { exact: true }).count()).toBe(0)
+      await page.keyboard.press('Escape')
+
+      const warningStart = tripwire.warnings.length
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      acknowledgeReloadConnectionLoss(tripwire, warningStart)
+      expect(await page.locator('[data-reviewer]').count()).toBe(0)
+      expect(scaffold.ctx.commands.list(agent).map(command => command.name)).not.toContain('review')
+      expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
+      await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
     },
-    60_000,
+    90_000,
   )
 
-  it('restores the same terminal card after reload', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle-reload'))
-    const warningStart = tripwire.warnings.length
-    await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    const expectedStatus = process.platform === 'win32' ? 'completed' : 'failed'
-    await page.locator(`[data-reviewer][data-review-status="${expectedStatus}"]`).waitFor({ timeout: 15_000 })
-    const terminalText = process.platform === 'win32' ? 'Review result' : POSIX_FAILURE
-    expect(await page.getByText(terminalText, { exact: true }).count()).toBe(1)
-    expect(tripwire.pageErrors).toEqual([])
-    expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['posix-unsupported.expected.md', 'ui.expected.md'])
-  }, 90_000)
+  it.skipIf(process.platform !== 'win32')(
+    'restores the same terminal card after reload',
+    async () => {
+      onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-lifecycle-reload'))
+      const warningStart = tripwire.warnings.length
+      await page.reload({ waitUntil: 'load' })
+      await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+      acknowledgeReloadConnectionLoss(tripwire, warningStart)
+      await page.locator('[data-reviewer][data-review-status="completed"]').waitFor({ timeout: 15_000 })
+      expect(await page.getByText('Review result', { exact: true }).count()).toBe(1)
+      expect(tripwire.pageErrors).toEqual([])
+      expect(tripwire.warnings).toEqual([])
+      await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md'])
+    },
+    90_000,
+  )
 
-  it('closes a persisted open review when its Agent resumes', async () => {
+  it.skipIf(process.platform !== 'win32')('closes a persisted open review when its Agent resumes', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reviewer-interrupted-resume'))
     const sessionId = SessionId('reviewer-interrupted-web-e2e')
     const cwd = join(scaffold.workspaceCwd, 'workspace')

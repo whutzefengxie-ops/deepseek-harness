@@ -296,7 +296,7 @@ function isTranscriptEvidence(message: Message): boolean {
  * contribute no review surface and are also skipped; unknown future blocks
  * fall through the same documented skip.
  * @param messages - derived session messages in model order.
- * @param maxChars - tail-keep bound in characters for the rendered transcript.
+ * @param maxChars - tail-keep bound in Unicode code points for the rendered transcript.
  * @returns the rendered transcript, truncated to its tail with a header when
  *   it exceeds the bound.
  */
@@ -323,7 +323,8 @@ export function renderTranscript(messages: readonly Message[], maxChars: number)
     }
   }
   const full = lines.join('\n')
-  if (full.length <= maxChars) return full
-  const tail = full.slice(full.length - maxChars)
-  return `[Transcript truncated: showing the last ${maxChars} of ${full.length} characters.]\n${tail}`
+  const characters = Array.from(full)
+  if (characters.length <= maxChars) return full
+  const tail = characters.slice(-maxChars).join('')
+  return `[Transcript truncated: showing the last ${maxChars} of ${characters.length} characters.]\n${tail}`
 }

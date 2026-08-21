@@ -101,7 +101,7 @@ export const reviewerDefinition: ConversationNodeDefinition<ReviewerState> = {
     const node: ChatConversationViewNode = {
       key: context.key, kind: 'reviewer', id: context.id, target: 'chat',
       anchorSeq: anchor.event.seq, location: anchor.location,
-      visibility: 'visible', data,
+      visibility: 'visible', presentationCommandId: state.commandId, data,
     }
     return node
   },

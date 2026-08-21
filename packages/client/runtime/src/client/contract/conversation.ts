@@ -1,5 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { ToolEventView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 
 /* oxlint-disable typescript/no-duplicate-type-constituents, typescript/no-redundant-type-constituents --
  * The unaugmented declaration-merge maps intentionally resolve to never in the Runtime program;
@@ -127,6 +128,8 @@ export interface ChatConversationViewNode extends ConversationViewNode {
   readonly anchorSeq: number
   readonly location: ConversationLocation
   readonly visibility: 'visible' | 'hidden'
+  /** Successful generic command row this visible domain node replaces. */
+  readonly presentationCommandId?: CommandId
 }
 
 /** Immutable public view of an assembled business Context. */

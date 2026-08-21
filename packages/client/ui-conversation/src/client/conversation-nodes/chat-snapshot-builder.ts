@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type {
   ChatConversationViewNode, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot,
   ConversationLocation, ConversationNode, ConversationTimelineSnapshot,
@@ -150,27 +151,44 @@ function domainAnchor(node: ChatConversationViewNode): number | undefined {
   return node.kind !== 'command' && node.visibility === 'visible' ? node.anchorSeq : undefined
 }
 
-function addIndexed(index: Map<number, Set<string>>, anchor: number, key: string): void {
-  const keys = index.get(anchor) ?? new Set<string>()
-  keys.add(key)
-  index.set(anchor, keys)
+function successfulCommandId(node: ChatConversationViewNode): CommandId | undefined {
+  const candidate = node as ChatNode
+  return candidate.kind === 'command' && candidate.data.outcome?.kind === 'success'
+    ? candidate.data.commandId
+    : undefined
 }
 
-function removeIndexed(index: Map<number, Set<string>>, anchor: number, key: string): void {
-  const keys = index.get(anchor)
+function domainCommandId(node: ChatConversationViewNode): CommandId | undefined {
+  return node.kind !== 'command' && node.visibility === 'visible'
+    ? node.presentationCommandId
+    : undefined
+}
+
+function addIndexed<Identity>(index: Map<Identity, Set<string>>, identity: Identity, key: string): void {
+  const keys = index.get(identity) ?? new Set<string>()
+  keys.add(key)
+  index.set(identity, keys)
+}
+
+function removeIndexed<Identity>(index: Map<Identity, Set<string>>, identity: Identity, key: string): void {
+  const keys = index.get(identity)
   if (keys === undefined) return
   keys.delete(key)
-  if (keys.size === 0) index.delete(anchor)
+  if (keys.size === 0) index.delete(identity)
 }
 
 /** Incrementally hides generic command rows claimed by visible domain nodes. */
 class CommandPresentationProjector {
   private readonly domains = new Map<number, Set<string>>()
   private readonly commands = new Map<number, Set<string>>()
+  private readonly domainCommandIds = new Map<CommandId, Set<string>>()
+  private readonly commandIds = new Map<CommandId, Set<string>>()
 
   replace(nodes: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
     this.domains.clear()
     this.commands.clear()
+    this.domainCommandIds.clear()
+    this.commandIds.clear()
     for (const node of nodes) this.add(node)
     return nodes.map(node => this.reconcile(node))
   }
@@ -181,6 +199,7 @@ class CommandPresentationProjector {
   ): readonly ChatConversationViewNode[] {
     const byKey = new Map(upserts.map(node => [node.key, node]))
     const affectedAnchors = new Set<number>()
+    const affectedCommandIds = new Set<CommandId>()
     const affectedCommands = new Set<string>()
     for (const node of upserts) {
       const previous = store.get(node.key)
@@ -190,19 +209,35 @@ class CommandPresentationProjector {
           removeIndexed(this.domains, previousDomain, previous.key)
           affectedAnchors.add(previousDomain)
         }
+        const previousDomainCommandId = domainCommandId(previous)
+        if (previousDomainCommandId !== undefined) {
+          removeIndexed(this.domainCommandIds, previousDomainCommandId, previous.key)
+          affectedCommandIds.add(previousDomainCommandId)
+        }
         const previousSource = commandSourceSeq(previous)
         if (previousSource !== undefined) {
           removeIndexed(this.commands, previousSource, previous.key)
+          affectedCommands.add(previous.key)
+        }
+        const previousCommandId = successfulCommandId(previous)
+        if (previousCommandId !== undefined) {
+          removeIndexed(this.commandIds, previousCommandId, previous.key)
           affectedCommands.add(previous.key)
         }
       }
       this.add(node)
       const nextDomain = domainAnchor(node)
       if (nextDomain !== undefined) affectedAnchors.add(nextDomain)
+      const nextDomainCommandId = domainCommandId(node)
+      if (nextDomainCommandId !== undefined) affectedCommandIds.add(nextDomainCommandId)
       if (commandSourceSeq(node) !== undefined) affectedCommands.add(node.key)
+      if (successfulCommandId(node) !== undefined) affectedCommands.add(node.key)
     }
     for (const anchor of affectedAnchors) {
       for (const key of this.commands.get(anchor) ?? EMPTY_KEYS) affectedCommands.add(key)
+    }
+    for (const commandId of affectedCommandIds) {
+      for (const key of this.commandIds.get(commandId) ?? EMPTY_KEYS) affectedCommands.add(key)
     }
     for (const key of affectedCommands) {
       const node = byKey.get(key) ?? store.get(key)
@@ -214,14 +249,21 @@ class CommandPresentationProjector {
   private add(node: ChatConversationViewNode): void {
     const anchor = domainAnchor(node)
     if (anchor !== undefined) addIndexed(this.domains, anchor, node.key)
+    const domainId = domainCommandId(node)
+    if (domainId !== undefined) addIndexed(this.domainCommandIds, domainId, node.key)
     const source = commandSourceSeq(node)
     if (source !== undefined) addIndexed(this.commands, source, node.key)
+    const commandId = successfulCommandId(node)
+    if (commandId !== undefined) addIndexed(this.commandIds, commandId, node.key)
   }
 
   private reconcile(node: ChatConversationViewNode): ChatConversationViewNode {
     const sourceSeq = commandSourceSeq(node)
-    if (sourceSeq === undefined) return node
-    const visibility = this.domains.has(sourceSeq) ? 'hidden' : 'visible'
+    const commandId = successfulCommandId(node)
+    if (sourceSeq === undefined && commandId === undefined) return node
+    const claimedByAnchor = sourceSeq !== undefined && this.domains.has(sourceSeq)
+    const claimedByCommand = commandId !== undefined && this.domainCommandIds.has(commandId)
+    const visibility = claimedByAnchor || claimedByCommand ? 'hidden' : 'visible'
     return node.visibility === visibility ? node : { ...node, visibility }
   }
 }

@@ -47,6 +47,10 @@ function data(value: ConversationNodeAssembler): ReviewerChatData | undefined {
   return [...(value.snapshot('chat') as Snapshot).nodes.values()][0]?.data as ReviewerChatData | undefined
 }
 
+function reviewerNode(value: ConversationNodeAssembler): ChatConversationViewNode | undefined {
+  return [...(value.snapshot('chat') as Snapshot).nodes.values()][0]
+}
+
 function panelProps(panelData: ReviewerChatData): Parameters<typeof ReviewerPanel>[0] {
   return {
     node: { data: panelData },
@@ -107,10 +111,12 @@ describe('reviewer durable Conversation Definition', () => {
       activities: [{ activityId: 'command', kind: 'command', status: 'completed', detail: 'pnpm test' }],
       text: 'Paged result.',
     })
+    expect(reviewerNode(value)?.presentationCommandId).toBe('cmd-1')
 
     value.prepend([at(1, 'review/start', { commandId: 'cmd-1', focus: '审查并发' })], false)
     value.flush()
     expect(data(value)).toMatchObject({ focus: '审查并发', status: 'completed', text: 'Paged result.' })
+    expect(reviewerNode(value)?.presentationCommandId).toBe('cmd-1')
   })
 
   it('ignores unrelated events and rejects an invalid direct start call', () => {

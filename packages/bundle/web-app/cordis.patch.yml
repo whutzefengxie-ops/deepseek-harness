@@ -71,11 +71,14 @@
       name: '@deepseek-ai/dsh-session-log-export'
 
     # `/review` over the local Codex CLI: reviews the current session's agent
-    # output with one non-interactive `codex exec` run. The Codex CLI itself
-    # must be installed on the host; the Plugins settings page carries the
-    # model, thinking-effort, sandbox, prompt, and enable-switch configuration.
+    # output with one non-interactive `codex exec` run. The shipped local
+    # subprocess provider can guarantee Host-death termination only through a
+    # Windows Job Object, so POSIX omits both the command and its settings.
+    # A deployment with an equivalent provider can enable this row in a later
+    # patch. The Codex CLI itself must be installed on the Host.
     - id: command-reviewer
       name: '@deepseek-ai/dsh-command-reviewer'
+      disabled: !!js process.platform !== 'win32'
 
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'

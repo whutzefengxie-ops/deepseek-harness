@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type {
   ChatConversationViewNode, ChatSnapshot, ConversationEventInput,
   ConversationNodeDefinition, ConversationViewDefinition,
@@ -147,6 +148,37 @@ const DOMAIN_DEFINITION: ConversationNodeDefinition<true> = {
   },
 }
 
+const PAGED_DOMAIN_DEFINITION: ConversationNodeDefinition<true> = {
+  kind: 'test-paged-domain',
+  target: 'chat',
+  match: (event) => {
+    if (event.type === 'review/start') {
+      return { id: (event.data as { commandId: string }).commandId, role: 'start' }
+    }
+    if (event.type === 'review/activity' || event.type === 'review/end') {
+      return { id: (event.data as { commandId: string }).commandId, role: 'update' }
+    }
+    return null
+  },
+  start: () => true,
+  update: () => true,
+  buildViewNode: (context) => {
+    const anchor = context.start ?? context.matches[0]
+    if (anchor === undefined) return null
+    return {
+      key: context.key,
+      kind: 'test-paged-domain',
+      id: context.id,
+      target: 'chat',
+      anchorSeq: anchor.event.seq,
+      location: anchor.location,
+      visibility: 'visible',
+      presentationCommandId: context.id as CommandId,
+      data: null,
+    }
+  },
+}
+
 describe('built-in conversation node Definitions', () => {
   it('reconciles a content-only upsert without scanning the retained Chat history', () => {
     let kindReads = 0
@@ -207,6 +239,50 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
 
     expect(node(snapshot(value), 'command')?.visibility).toBe('hidden')
+  })
+
+  it('uses command identity when a paged domain node loads before its start anchor', () => {
+    const run = at(1, 'command/run', {
+      commandId: 'review-1', name: 'review', source: { kind: 'user' },
+    })
+    const start = at(10, 'review/start', { commandId: 'review-1' })
+    const done = at(11, 'command/done', {
+      commandId: 'review-1', kind: 'success', sourceEventSeq: 10,
+    })
+    const activity = at(12, 'review/activity', {
+      commandId: 'review-1', activityId: 'analysis', kind: 'analysis', status: 'completed',
+    })
+    const end = at(13, 'review/end', {
+      commandId: 'review-1', outcome: 'completed', text: 'Paged result.',
+    })
+    const definitions = [...DEFINITIONS, PAGED_DOMAIN_DEFINITION]
+
+    const replay = assembler([run, done, activity, end], true, definitions)
+    expect(node(snapshot(replay), 'command')?.visibility).toBe('hidden')
+    expect(node(snapshot(replay), 'test-paged-domain')).toMatchObject({
+      anchorSeq: 12,
+      visibility: 'visible',
+      presentationCommandId: 'review-1',
+    })
+
+    const incremental = assembler([run, done], true, definitions)
+    expect(node(snapshot(incremental), 'command')?.visibility).toBe('visible')
+    incremental.append(activity)
+    incremental.append(end)
+    incremental.flush()
+    expect(node(snapshot(incremental), 'command')?.visibility).toBe('hidden')
+    expect(node(snapshot(incremental), 'test-paged-domain')?.anchorSeq).toBe(12)
+
+    incremental.prepend([start], false)
+    incremental.flush()
+    const completed = snapshot(incremental)
+    expect(node(completed, 'command')?.visibility).toBe('hidden')
+    expect(node(completed, 'test-paged-domain')?.anchorSeq).toBe(10)
+
+    const full = snapshot(assembler([run, start, done, activity, end], false, definitions))
+    expect(completed.order).toEqual(full.order)
+    expect([...completed.nodes.values()].map(item => [item.kind, item.visibility, item.anchorSeq]))
+      .toEqual([...full.nodes.values()].map(item => [item.kind, item.visibility, item.anchorSeq]))
   })
 
   it('keeps one keyed Assistant node while streaming settles and materializes interruption from Location', () => {

@@ -407,6 +407,15 @@ describe('renderTranscript', () => {
     expect(rendered.endsWith('aaa')).toBe(true)
   })
 
+  it('counts and truncates Unicode by code point without splitting an emoji', () => {
+    const rendered = renderTranscript([
+      message('user', [{ type: 'text', text: 'abc😀' }]),
+    ], 1)
+
+    expect(rendered).toBe('[Transcript truncated: showing the last 1 of 10 characters.]\n😀')
+    expect(rendered.split('\n').at(-1)).toBe('😀')
+  })
+
   it('keeps the full transcript exactly at the bound', () => {
     const text = 'User: abc'
     const rendered = renderTranscript([message('user', [{ type: 'text', text: 'abc' }])], text.length)
