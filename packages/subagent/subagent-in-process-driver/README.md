@@ -12,11 +12,11 @@ The driver follows this sequence:
 
 1. Validate the parent depth and optional absolute `maxDepth`, then derive child depth as parent depth plus one and persist it in the child session header.
 2. Call `parent.ctx.agents.create` directly, passing the required request signal into the factory's creation transaction.
-3. During that transaction's unpublished setup window, install the requested persona, tool restriction, and structured-output runtime.
+3. During that transaction's unpublished setup window, install the requested persona, tool restriction, model selection, and structured-output runtime.
 4. Publish the child, retain the returned `AgentHandle`, and drive one task with `child.followup(prompt)` followed by `child.whenIdle()`.
 5. Read the child's own output — its last non-empty assistant message (an empty-content message that records usage is skipped), or its accumulated assistant text when no such message exists — and the final durable turn reason from the complete owned child run, excluding any fork seed.
 
-The child gets the parent's working-directory/session lineage and inherits the parent provider, model, and output-token cap unless `request.agentOptions` overrides them. It gets a fresh flat registration scope: parent ownership does not import parent tool restrictions or establish an authority subset.
+The child gets the parent's working-directory/session lineage and inherits the parent provider, model, and output-token cap unless the request overrides them. `request.modelSelection` installs one complete request-time provider, model, and reasoning-effort route while keeping the child's public provider and model options aligned. It gets a fresh flat registration scope: parent ownership does not import parent tool restrictions or establish an authority subset.
 
 This result boundary is valid because the provider owns an isolated child lifecycle from publication through quiescence. Steering submitted during that lifecycle belongs to the child run; the provider does not pretend the initial follow-up alone owns its output.
 

@@ -1,0 +1,19 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../core/session" },
+    { "path": "../../core/tools" },
+    { "path": "../../interaction/commands" },
+    { "path": "../../interaction/user-approval" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../shadow-mind-runtime" }
+  ]
+}

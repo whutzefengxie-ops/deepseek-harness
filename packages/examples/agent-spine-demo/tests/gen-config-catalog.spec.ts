@@ -71,6 +71,40 @@ export default class Fix {
     expect(entries[0]).toMatchObject({ kind: 'config', className: 'Fix', inject: ['llm'], schemaKeys: ['knob'] })
   })
 
+  it('follows a named package-local schema imported by a service class', () => {
+    const entries = collectConfigCatalog(make({
+      'src/index.ts': `import type { Context } from '@deepseek-ai/cordis'
+import { Config } from './config.ts'
+import type { FixtureConfig } from './types.ts'
+/** Fixture service. */
+export default class Fix {
+  static Config = Config
+  constructor(ctx: Context, config: FixtureConfig) {}
+}
+`,
+      'src/config.ts': `import z from '@deepseek-ai/schemastery'
+/** Settings-only schema. */
+export const Settings = z.object({ knob: z.string() })
+/** Fixture config schema. */
+export const Config = z.intersect([Settings, z.object({ home: z.string() })])
+`,
+      'src/types.ts': `/** Fixture config. */
+export interface FixtureConfig {
+  /** A knob. */
+  knob?: string
+  /** Optional home. */
+  home?: string
+}
+`,
+    }))
+    expect(entries[0]).toMatchObject({
+      kind: 'config',
+      className: 'Fix',
+      configTypeName: 'FixtureConfig',
+      schemaKeys: ['knob', 'home'],
+    })
+  })
+
   it('classifies an abstract default class as a seam', () => {
     const entries = collectConfigCatalog(make({
       'src/index.ts': 'export default abstract class FixSeam { abstract run(): void }\n',

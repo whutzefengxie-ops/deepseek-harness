@@ -1624,6 +1624,82 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'shadowMind',
+    summary: 'Root-only Shadow orchestration service.',
+    description: 'Root-only Shadow orchestration service.',
+    methods: [
+      {
+        signature: 'readonly registry: ShadowRegistry',
+        description: 'Definition and debug-log store.',
+        parameters: [],
+      },
+      {
+        signature: 'listDefinitions(): Promise<ShadowCatalog>',
+        description: 'Load the current definition catalog.',
+        parameters: [],
+        returns: 'Current valid definitions and isolated file diagnostics.',
+      },
+      {
+        signature: 'createDefinition(input: CreateShadowDefinition): Promise<ShadowDefinition>',
+        description: 'Create a definition atomically.',
+        parameters: [{ name: 'input', description: 'Complete definition fields.' }],
+        returns: 'Validated persisted definition.',
+      },
+      {
+        signature: 'updateDefinition(id: string, patch: UpdateShadowDefinition): Promise<ShadowDefinition>',
+        description: 'Update a definition atomically.',
+        parameters: [{ name: 'id', description: 'Existing definition id.' }, { name: 'patch', description: 'Fields to replace.' }],
+        returns: 'Updated validated definition.',
+      },
+      {
+        signature: 'setEnabled(id: string, enabled: boolean): Promise<ShadowDefinition>',
+        description: 'Enable or disable a definition atomically.',
+        parameters: [{ name: 'id', description: 'Existing definition id.' }, { name: 'enabled', description: 'Next scheduling state.' }],
+        returns: 'Updated validated definition.',
+      },
+      {
+        signature: 'deleteDefinition(id: string): Promise<void>',
+        description: 'Delete a definition while preserving debug logs.',
+        parameters: [{ name: 'id', description: 'Existing definition id.' }],
+      },
+      {
+        signature: 'currentSettings(): ShadowMindSettings',
+        description: 'Return the current immutable resolved settings.',
+        parameters: [],
+        returns: 'Live resolved settings snapshot.',
+      },
+      {
+        signature: 'updateSettings(patch: Partial<ShadowMindSettings>): Promise<void>',
+        description: 'Persist a partial user-settings patch.',
+        parameters: [{ name: 'patch', description: 'Settings fields to replace.' }],
+      },
+      {
+        signature: 'status(agent: Agent): ShadowMindStatus',
+        description: 'Return per-root orchestration status without creating state for an untouched root.',
+        parameters: [{ name: 'agent', description: 'Root agent to inspect.' }],
+        returns: 'Current scheduling and run status.',
+      },
+      {
+        signature: 'pause(agent: Agent): ShadowMindStatus',
+        description: 'Pause scheduling for a root and cancel its admitted work.',
+        parameters: [{ name: 'agent', description: 'Root agent to pause.' }],
+        returns: 'Status after the transition.',
+      },
+      {
+        signature: 'resume(agent: Agent): ShadowMindStatus',
+        description: 'Resume future scheduling for a root.',
+        parameters: [{ name: 'agent', description: 'Root agent to resume.' }],
+        returns: 'Status after the transition.',
+      },
+      {
+        signature: 'toggle(agent: Agent): ShadowMindStatus',
+        description: 'Toggle automatic scheduling for a root.',
+        parameters: [{ name: 'agent', description: 'Root agent to update.' }],
+        returns: 'Status after the transition.',
+      },
+    ],
+  },
+  {
     key: 'shell',
     summary: 'Abstract bash execution service.',
     description: 'Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.\n- start returns immediately; no timeout applies to background processes. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on stderr.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.',
@@ -2842,6 +2918,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'ActiveShadowStatus',
+    declaration: 'export interface ActiveShadowStatus {\n    readonly shadowId: string;\n    readonly childSessionId?: SessionId;\n    readonly capturedThroughSeq: number;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -3196,6 +3276,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+  },
+  {
+    name: 'CreateShadowDefinition',
+    declaration: 'export type CreateShadowDefinition = Omit<ShadowDefinition, \'sourcePath\'>;',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -4342,6 +4426,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SettingsUpdateSource = \'update\' | \'provider\';',
   },
   {
+    name: 'ShadowCatalog',
+    declaration: 'export interface ShadowCatalog {\n    readonly definitions: readonly ShadowDefinition[];\n    readonly diagnostics: readonly ShadowDiagnostic[];\n}',
+  },
+  {
+    name: 'ShadowDefinition',
+    declaration: 'export interface ShadowDefinition {\n    readonly id: string;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly debug: boolean;\n    readonly activationProbability: number;\n    readonly activeForModels: readonly string[];\n    readonly runWithModel?: string;\n    readonly reasoningEffort?: string;\n    readonly timeoutSeconds?: number;\n    readonly tools: readonly string[];\n    readonly prompt: string;\n    readonly sourcePath: string;\n}',
+  },
+  {
+    name: 'ShadowDiagnostic',
+    declaration: 'export interface ShadowDiagnostic {\n    readonly path: string;\n    readonly error: string;\n}',
+  },
+  {
+    name: 'ShadowMindSettings',
+    declaration: 'export interface ShadowMindSettings {\n    readonly heartbeatProbability: number;\n    readonly maxParallelShadows: number;\n    readonly defaultShadowTimeoutSeconds: number;\n    readonly headlessDrainTimeoutSeconds: number;\n    readonly resultBatchWindowMs: number;\n    readonly defaultShadowModel?: string;\n    readonly defaultReasoningEffort?: string;\n    readonly argumentDisclosure: \'redacted\' | \'full\';\n    readonly randomSeed?: number;\n    readonly maxPromptChars: number;\n    readonly maxReportChars: number;\n}',
+  },
+  {
+    name: 'ShadowMindStatus',
+    declaration: 'export interface ShadowMindStatus {\n    readonly paused: boolean;\n    readonly active: readonly ActiveShadowStatus[];\n    readonly pendingSchedules: number;\n    readonly epoch: number;\n}',
+  },
+  {
+    name: 'ShadowRegistry',
+    declaration: 'export class ShadowRegistry {\n    readonly root: string;\n    readonly logRoot: string;\n    constructor(dshHome: string);\n    async list(): Promise<ShadowCatalog>;\n    async create(input: CreateShadowDefinition): Promise<ShadowDefinition>;\n    async update(id: string, patch: UpdateShadowDefinition): Promise<ShadowDefinition>;\n    setEnabled(id: string, enabled: boolean): Promise<ShadowDefinition>;\n    async delete(id: string): Promise<void>;\n    async appendDebug(id: string, record: Record<string, unknown>): Promise<void>;\n}',
+  },
+  {
     name: 'ShellExecRequest',
     declaration: 'export interface ShellExecRequest {\n    command: string;\n    workdir?: string | undefined;\n    timeoutMs?: number | undefined;\n    stdoutMaxBytes?: number | undefined;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n}',
   },
@@ -4463,7 +4571,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n    readonly modelSelection?: boolean;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -4519,7 +4627,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly modelSelection?: ModelSelection;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
   },
   {
     name: 'SubagentStopReason',
@@ -4924,6 +5032,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UpdateShadowDefinition',
+    declaration: 'export type UpdateShadowDefinition = Partial<Omit<CreateShadowDefinition, \'id\' | \'runWithModel\' | \'reasoningEffort\' | \'timeoutSeconds\'>> & {\n    readonly runWithModel?: string | undefined;\n    readonly reasoningEffort?: string | undefined;\n    readonly timeoutSeconds?: number | undefined;\n};',
   },
   {
     name: 'UpdateTeamTaskRequest',

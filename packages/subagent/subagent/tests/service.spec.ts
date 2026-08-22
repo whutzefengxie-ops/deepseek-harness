@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { type Agent } from '@deepseek-ai/dsh-agent'
 
-import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { HarnessError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
 import SubagentRuntime, {
   foldSubagentDescriptor,
@@ -24,7 +24,13 @@ function fakeParent(id = 'parent-1'): Agent {
   return { id: SessionId(id) } as unknown as Agent
 }
 
-const ALL_CAPS: SubagentCapabilities = { outputSchema: true, depthLimit: true, toolFilter: true, persona: true }
+const ALL_CAPS: SubagentCapabilities = {
+  outputSchema: true,
+  depthLimit: true,
+  toolFilter: true,
+  persona: true,
+  modelSelection: true,
+}
 const NO_CAPS: SubagentCapabilities = { outputSchema: false, depthLimit: false, toolFilter: false, persona: false }
 
 function baseRequest(overrides: Partial<SubagentStartRequest> = {}): SubagentStartRequest {
@@ -166,6 +172,13 @@ describe('SubagentRuntime', () => {
     ['depthLimit', { maxDepth: 1 }],
     ['toolFilter', { toolFilter: { deny: ['bash'] } }],
     ['persona', { persona: 'reviewer' }],
+    ['modelSelection', {
+      modelSelection: {
+        provider: 'mock',
+        model: 'reasoning-model',
+        reasoningEffort: ReasoningEffortId('high'),
+      },
+    }],
   ] as const)('rejects unsupported %s before provider startup', async (_capability, override) => {
     const { subagents } = await service()
     const provider = new StubProvider('weak', NO_CAPS)
@@ -173,6 +186,37 @@ describe('SubagentRuntime', () => {
     await expect(subagents.start('weak', baseRequest(override)))
       .rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
     expect(provider.startCount).toBe(0)
+  })
+
+  it.each([
+    { provider: 'other', model: 'reasoning-model' },
+    { provider: 'mock', model: 'other' },
+  ])('rejects a model selection that conflicts with explicit agent options %#', async (agentOptions) => {
+    const { subagents } = await service()
+    const provider = new StubProvider('strong')
+    subagents.registerProvider(provider)
+    await expect(subagents.start('strong', baseRequest({
+      agentOptions,
+      modelSelection: { provider: 'mock', model: 'reasoning-model' },
+    }))).rejects.toMatchObject({ code: 'CONFLICTING_MODEL_SELECTION' })
+    expect(provider.startCount).toBe(0)
+  })
+
+  it.each([
+    {},
+    { agentOptions: { provider: 'mock' } },
+    { agentOptions: { model: 'reasoning-model' } },
+    { agentOptions: { provider: 'mock', model: 'reasoning-model' } },
+  ])('starts with a model selection coherent with explicit agent options %#', async (override) => {
+    const { subagents } = await service()
+    const provider = new StubProvider('strong')
+    subagents.registerProvider(provider)
+    const run = await subagents.start('strong', baseRequest({
+      ...override,
+      modelSelection: { provider: 'mock', model: 'reasoning-model' },
+    }))
+    expect(provider.startCount).toBe(1)
+    await run.dispose()
   })
 
   it('validates depth and schema semantics before provider startup', async () => {

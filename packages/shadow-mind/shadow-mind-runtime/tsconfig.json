@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/agent" },
+    { "path": "../../core/session" },
+    { "path": "../../core/tools" },
+    { "path": "../../compaction/compaction" },
+    { "path": "../../llm/llm" },
+    { "path": "../../settings/settings" },
+    { "path": "../../subagent/subagent" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../util/atomic-write" },
+    { "path": "../../util/home-paths" }
+  ]
+}

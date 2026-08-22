@@ -1977,6 +1977,48 @@ export interface Config {
 
 Source: [`packages/settings/settings-file/src/index.ts:21`](../packages/settings/settings-file/src/index.ts)
 
+<a id="deepseek-aidsh-shadow-mind-runtime"></a>
+
+## `@deepseek-ai/dsh-shadow-mind-runtime`
+
+Requires: `agents` · `subagents` · `settings`
+
+```ts config-catalog
+/** Runtime plugin configuration. */
+export interface ShadowMindConfig extends Partial<ShadowMindSettings> {
+  /** Harness home used for definitions and debug logs. */
+  readonly dshHome?: string
+}
+
+/** Live scheduling and projection settings owned by the user. */
+export interface ShadowMindSettings {
+  /** Probability that an eligible tool-using root turn enters Shadow scheduling. */
+  readonly heartbeatProbability: number
+  /** Maximum active Shadow runs per root agent. */
+  readonly maxParallelShadows: number
+  /** Default run deadline when a definition omits one. */
+  readonly defaultShadowTimeoutSeconds: number
+  /** Maximum headless wait after a root turn. */
+  readonly headlessDrainTimeoutSeconds: number
+  /** Window used to combine accepted reports into one relay. */
+  readonly resultBatchWindowMs: number
+  /** Optional fallback `provider/model` route. */
+  readonly defaultShadowModel?: string
+  /** Optional fallback adapter-owned reasoning effort. */
+  readonly defaultReasoningEffort?: string
+  /** Whether tool-call arguments are omitted or copied into Shadow prompts. */
+  readonly argumentDisclosure: 'redacted' | 'full'
+  /** Optional deterministic random seed. */
+  readonly randomSeed?: number
+  /** Maximum complete framed prompt size. */
+  readonly maxPromptChars: number
+  /** Maximum accepted report size. */
+  readonly maxReportChars: number
+}
+```
+
+Source: [`packages/shadow-mind/shadow-mind-runtime/src/types.ts:76`](../packages/shadow-mind/shadow-mind-runtime/src/types.ts)
+
 <a id="deepseek-aidsh-shell-env"></a>
 
 ## `@deepseek-ai/dsh-shell-env`
@@ -3289,6 +3331,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))
 - `@deepseek-ai/dsh-tool-cordis` — requires `tools` · `systemPrompt` · `dynamicCordisRunner` · `cordisInspect` ([`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts))
+- `@deepseek-ai/dsh-tool-shadow-mind` — requires `tools` · `shadowMind` · `commands` · `approval` ([`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts))
 - `@deepseek-ai/dsh-tool-subagent-control` — requires `tools` · `subagents` ([`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts))
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
@@ -3345,6 +3388,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-sdk-protocol` ([`packages/sdk/protocol/src/index.ts`](../packages/sdk/protocol/src/index.ts))
 - `@deepseek-ai/dsh-session-telemetry` ([`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts))
 - `@deepseek-ai/dsh-session-title-llm` ([`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts))
+- `@deepseek-ai/dsh-shadow-mind` ([`packages/bundle/shadow-mind/src/index.ts`](../packages/bundle/shadow-mind/src/index.ts))
 - `@deepseek-ai/dsh-subagent-in-process-driver` ([`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts))
 - `@deepseek-ai/dsh-timeout` ([`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts))
 - `@deepseek-ai/dsh-typert-generator` ([`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts))

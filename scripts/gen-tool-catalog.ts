@@ -27,6 +27,8 @@ import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentLimits, ImageAttachmentRef, SaveImageAttachment, StoredImageAttachment } from '@deepseek-ai/dsh-attachment'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import { ApprovalService } from '@deepseek-ai/dsh-user-approval'
+import { CommandRuntime } from '@deepseek-ai/dsh-commands'
 import PlanModeController from '@deepseek-ai/dsh-plan-mode'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
@@ -57,6 +59,8 @@ import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
+import type ShadowMindRuntime from '@deepseek-ai/dsh-shadow-mind-runtime'
+import * as ToolShadowMind from '@deepseek-ai/dsh-tool-shadow-mind'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
@@ -451,6 +455,21 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-shadow-mind',
+    dir: 'tool-shadow-mind',
+    source: 'packages/shadow-mind/tool-shadow-mind/src/index.ts',
+    requires: ['ctx.tools', 'ctx.shadowMind', 'ctx.commands', 'ctx.approval'],
+    writes: ['tool/call', 'tool/result', 'Shadow definition Markdown or settings through ctx.shadowMind'],
+    async mount(ctx) {
+      await ctx.plugin(CommandRuntime)
+      await ctx.plugin(ApprovalService)
+      ctx.provide('shadowMind', {} as ShadowMindRuntime)
+      await ctx.plugin(ToolShadowMind)
+    },
+    note:
+      'The two read operations inspect runtime state. Six mutation tools require an `allowed-once` approval before the Shadow runtime changes a Markdown definition or user settings.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent',

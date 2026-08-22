@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "tool-call" },
+      { "type": "tool-call-delta", "index": 0, "id": "read-fixture", "name": "read", "argumentsDelta": "{\"file_path\":\"fixture.txt\"}" },
+      { "type": "block-end", "index": 0, "block": { "type": "tool-call", "id": "read-fixture", "name": "read", "arguments": "{\"file_path\":\"fixture.txt\"}" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "tool-calls" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "ROOT_TOOL_TURN_DONE" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "ROOT_TOOL_TURN_DONE" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      { "type": "block-start", "index": 0, "blockType": "text" },
+      { "type": "text-delta", "index": 0, "text": "ROOT_USED_SHADOW_REPORT" },
+      { "type": "block-end", "index": 0, "block": { "type": "text", "text": "ROOT_USED_SHADOW_REPORT" } },
+      { "type": "usage", "usage": { "inputTokens": 10, "outputTokens": 5 } },
+      { "type": "finish", "reason": { "kind": "stop" } }
+    ]
+  }
+]
