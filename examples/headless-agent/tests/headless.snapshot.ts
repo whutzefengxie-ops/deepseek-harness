@@ -48,6 +48,8 @@ const ralphScenarioDir = join(snapshotsDir, 'ralph-loop')
 const ralphConfigPath = fileURLToPath(new URL('../ralph.cordis.snapshot.yml', import.meta.url))
 const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
 const settlementConfigPath = fileURLToPath(new URL('../subagent-settlement.cordis.snapshot.yml', import.meta.url))
+const shadowMindScenarioDir = join(snapshotsDir, 'shadow-mind')
+const shadowMindConfigPath = fileURLToPath(new URL('../shadow-mind.cordis.snapshot.yml', import.meta.url))
 const teamConfigPath = fileURLToPath(new URL('../team.cordis.snapshot.yml', import.meta.url))
 const startupFailureConfigPath = fileURLToPath(new URL('./fixtures/startup-activation-error/cordis.yml', import.meta.url))
 const startupFailureExpected = join(snapshotsDir, 'startup-activation-error', 'stderr.expected.txt')
@@ -948,6 +950,109 @@ describe('headless stream-json snapshots', () => {
     expect(records.at(-1)).toMatchObject({
       type: 'result',
       output: 'PARENT_RECEIVED_CHILD_RESULT',
+    })
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('waits for a fresh Shadow report and its root follow-up', async () => {
+    const parentReplay = join(shadowMindScenarioDir, 'parent.replay.jsonl')
+    const parentOverride = join(shadowMindScenarioDir, 'parent.override.json')
+    const childReplay = join(shadowMindScenarioDir, 'child.replay.jsonl')
+    const childExpected = join(shadowMindScenarioDir, 'child.expected.jsonl')
+    const streamExpected = join(shadowMindScenarioDir, 'stream-json.expected.jsonl')
+    const task = 'Read fixture.txt, then use any background Shadow report before giving the final answer.'
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'Shadow Mind headless stream-json snapshot',
+      tempDirPrefix: 'headless-snapshot-shadow-mind-',
+      binScript,
+      libBinScript: binScript,
+      configPath: shadowMindConfigPath,
+      binArgs: [shadowMindConfigPath, task],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT_FILE: parentReplay,
+        DSH_SNAPSHOT_OVERRIDE: parentOverride,
+        DSH_SNAPSHOT_CHILD_FILES: childReplay,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await writeFile(join(cwd, 'fixture.txt'), 'ROOT_TOOL_SECRET\n')
+        const definitions = join(cwd, '.dsh', 'shadow-minds')
+        await mkdir(definitions, { recursive: true })
+        await writeFile(join(definitions, 'reviewer.md'), [
+          '---',
+          'id: reviewer',
+          'name: Independent reviewer',
+          'enabled: true',
+          'debug: false',
+          'activation_probability: 1',
+          'active_for_models: []',
+          'tools: []',
+          '---',
+          '',
+          'Report concrete risks that the root agent can act on.',
+          '',
+        ].join('\n'))
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(2)
+        const parent = logs.find(log => typeof log.header.parentSession !== 'string')
+        const child = logs.find(log => typeof log.header.parentSession === 'string')
+        if (parent === undefined || child === undefined) throw new Error('missing persisted Shadow root or child log')
+
+        const parentRecords = parseJsonl(parent.content)
+        const childRecords = parseJsonl(child.content)
+        expect(parentRecords.filter(record => record.type === 'tool/call').map((record) => {
+          return (record.data as JsonObject | undefined)?.name
+        })).toEqual(['read'])
+        expect(child.header).toMatchObject({
+          parentSession: parent.header.id,
+          delegationDepth: 1,
+        })
+        expect(childRecords.find(record => record.type === 'approval/policy')?.data).toMatchObject({
+          policy: 'never',
+          source: 'delegation',
+        })
+        const childPrompt = JSON.stringify(childRecords.find(record => record.type === 'user/message')?.data)
+        expect(childPrompt).toContain('Report concrete risks that the root agent can act on.')
+        expect(childPrompt).toContain('arguments=[redacted]')
+        expect(childPrompt).toContain('read success: 1 non-empty lines, 16 text characters')
+        expect(childPrompt).not.toContain('ROOT_TOOL_SECRET')
+        const structuredCall = childRecords.find(record => record.type === 'tool/call')
+        expect(structuredCall?.data).toMatchObject({ name: 'structured_output' })
+        expect(JSON.stringify(structuredCall?.data)).toContain('SHADOW_ACTIONABLE_FINDING')
+
+        const relay = parentRecords.find((record) => {
+          if (record.type !== 'user/message') return false
+          const source = (record.data as JsonObject | undefined)?.source as JsonObject | undefined
+          return source?.kind === 'shadow-report'
+        })
+        const relayData = relay?.data as JsonObject | undefined
+        const relaySource = relayData?.source as JsonObject | undefined
+        expect(relaySource).toMatchObject({ kind: 'shadow-report', form: 'relay' })
+        expect(JSON.stringify(relaySource)).toContain('reviewer')
+        expect(JSON.stringify(relayData?.content)).toContain('SHADOW_ACTIONABLE_FINDING')
+        const rootFollowup = parentRecords.find(record => record.type === 'assistant/message'
+          && JSON.stringify(record.data).includes('ROOT_USED_SHADOW_REPORT'))
+        expect(rootFollowup).toBeDefined()
+        expect(Number(relay?.seq)).toBeLessThan(Number(rootFollowup?.seq))
+
+        const context = contextFromLogs([parent.content, child.content])
+        const normalizedChild = normalizeSessionSnapshot(child.content, context)
+        if (refreshing) await writeFile(childExpected, normalizedChild)
+        await expect(normalizedChild).toMatchFileSnapshot(childExpected)
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    expect(parseJsonl(result.stdout).at(-1)).toMatchObject({
+      type: 'result',
+      output: 'ROOT_USED_SHADOW_REPORT',
     })
     const normalized = normalizeHeadlessStream(result.stdout, runCwd)
     if (refreshing) await writeFile(streamExpected, normalized)

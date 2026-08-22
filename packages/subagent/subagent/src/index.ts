@@ -430,6 +430,7 @@ export class SubagentRuntime extends Service {
   async start(name: string, request: SubagentStartRequest): Promise<SubagentRun> {
     const provider = this.expectProvider(name)
     this.assertCapabilities(provider, request)
+    this.assertModelSelection(request)
     assertSubagentMaxDepth(request.maxDepth)
     if (request.outputSchema !== undefined) assertObjectJsonSchema(request.outputSchema)
     const descriptor = snapshotSubagentDescriptor({
@@ -500,6 +501,7 @@ export class SubagentRuntime extends Service {
       { when: request.maxDepth !== undefined, cap: 'depthLimit' },
       { when: request.toolFilter !== undefined, cap: 'toolFilter' },
       { when: request.persona !== undefined, cap: 'persona' },
+      { when: request.modelSelection !== undefined, cap: 'modelSelection' },
     ]
     for (const { when, cap } of needs) {
       if (when && !provider.capabilities[cap]) {
@@ -508,6 +510,20 @@ export class SubagentRuntime extends Service {
           'UNSUPPORTED_CAPABILITY',
         )
       }
+    }
+  }
+
+  /** Keep the child's public route and request-time selection coherent. */
+  private assertModelSelection(request: SubagentStartRequest): void {
+    const selection = request.modelSelection
+    if (selection === undefined) return
+    const options = request.agentOptions
+    if (options?.provider !== undefined && options.provider !== selection.provider
+      || options?.model !== undefined && options.model !== selection.model) {
+      throw new SubagentError(
+        'subagent modelSelection must match agentOptions.provider and agentOptions.model when both are present',
+        'CONFLICTING_MODEL_SELECTION',
+      )
     }
   }
 }

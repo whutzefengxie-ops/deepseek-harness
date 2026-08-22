@@ -1,0 +1,8 @@
+# Installable probabilistic Shadow orchestration over the services in dsh-base.
+
+- insert:
+    - id: shadow-mind-runtime
+      name: '@deepseek-ai/dsh-shadow-mind-runtime'
+
+    - id: tool-shadow-mind
+      name: '@deepseek-ai/dsh-tool-shadow-mind'

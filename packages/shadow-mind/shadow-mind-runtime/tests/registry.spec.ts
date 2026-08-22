@@ -1,0 +1,179 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { Config, ShadowRegistry, parseShadowDefinition } from '@deepseek-ai/dsh-shadow-mind-runtime'
+import type { CreateShadowDefinition } from '@deepseek-ai/dsh-shadow-mind-runtime'
+
+function input(id: string): CreateShadowDefinition {
+  return {
+    id,
+    name: `Shadow ${id}`,
+    enabled: true,
+    debug: false,
+    activationProbability: 0.5,
+    activeForModels: ['mock/*'],
+    runWithModel: 'mock/shadow',
+    reasoningEffort: 'low',
+    timeoutSeconds: 12,
+    tools: ['web_search'],
+    prompt: 'Review architecture risks.',
+  }
+}
+
+describe('parseShadowDefinition', () => {
+  it('parses every supported field and normalizes CRLF', () => {
+    const definition = parseShadowDefinition([
+      '---',
+      'id: audit',
+      'name: Audit',
+      'enabled: false',
+      'debug: true',
+      'activation_probability: 0.75',
+      'active_for_models: ["mock/*"]',
+      'run_with_model: mock/shadow',
+      'reasoning_effort: low',
+      'timeout_seconds: 9',
+      'tools: [web_search]',
+      '---',
+      '',
+      'Inspect the design.',
+    ].join('\r\n'), 'C:/defs/audit.md')
+    expect(definition).toMatchObject({
+      id: 'audit', name: 'Audit', enabled: false, debug: true,
+      activationProbability: 0.75, runWithModel: 'mock/shadow',
+      reasoningEffort: 'low', timeoutSeconds: 9,
+      prompt: 'Inspect the design.',
+    })
+    expect(definition.activeForModels).toEqual(['mock/*'])
+    expect(definition.tools).toEqual(['web_search'])
+  })
+
+  it.each([
+    ['body only', 'definition must start'],
+    ['---\nid: a\nbody', 'closing ---'],
+    ['---\n- list\n---\nbody', 'YAML mapping'],
+    ['---\nid: A\n---\nbody', 'id must match'],
+    ['---\nid: a\nunknown: true\n---\nbody', 'unknown frontmatter'],
+    ['---\nid: a\nactivation_probability: 2\n---\nbody', 'activation_probability'],
+    ['---\nid: a\ntimeout_seconds: 0\n---\nbody', 'timeout_seconds'],
+    ['---\nid: a\ntools: [Bad Tool]\n---\nbody', 'tool'],
+    ['---\nid: a\nname: 1\n---\nbody', 'name must be a non-empty string'],
+    ['---\nid: a\nenabled: yes\n---\nbody', 'enabled must be a boolean'],
+    ['---\nid: a\ntools: value\n---\nbody', 'array of non-empty strings'],
+    ['---\nid: a\ntools: [read, ""]\n---\nbody', 'array of non-empty strings'],
+    ['---\nid: a\ntools: [read, read]\n---\nbody', 'must not contain duplicates'],
+    ['---\nid: a\nactivation_probability: .nan\n---\nbody', 'activation_probability'],
+    ['---\nid: a\ntimeout_seconds: .inf\n---\nbody', 'timeout_seconds'],
+    ['---\nid: a\nrun_with_model: model-only\n---\nbody', 'provider/model'],
+    ['---\nid: [\n---\nbody', 'invalid YAML frontmatter'],
+    ['---\nid: a\n---\n   ', 'body must be non-empty'],
+  ])('rejects invalid documents', (source, message) => {
+    expect(() => parseShadowDefinition(source, '/defs/a.md')).toThrow(message)
+  })
+})
+
+describe('Shadow settings', () => {
+  it('validates default model routes before the runtime starts', () => {
+    expect(Config({ defaultShadowModel: 'provider/org/model' }).defaultShadowModel)
+      .toBe('provider/org/model')
+    expect(() => Config({ defaultShadowModel: 'model-only' })).toThrow()
+    expect(() => Config({ defaultShadowModel: 'provider/has whitespace' })).toThrow()
+  })
+})
+
+describe('ShadowRegistry', () => {
+  it('creates, updates, enables, deletes, and preserves debug logs', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      await expect(registry.create(input('Bad'))).rejects.toThrow('shadow id must match')
+      await expect(registry.update('missing', { prompt: 'none' })).rejects.toThrow('does not exist')
+      const minimal = await registry.create({
+        id: 'minimal',
+        name: 'Minimal',
+        enabled: true,
+        debug: false,
+        activationProbability: 0.3,
+        activeForModels: [],
+        tools: [],
+        prompt: 'Minimal prompt.',
+      })
+      expect(minimal.id).toBe('minimal')
+      const minimalUpdated = await registry.update('minimal', { name: 'Minimal updated' })
+      expect(minimalUpdated.name).toBe('Minimal updated')
+      expect(minimalUpdated).not.toHaveProperty('runWithModel')
+      expect(minimalUpdated).not.toHaveProperty('reasoningEffort')
+      expect(minimalUpdated).not.toHaveProperty('timeoutSeconds')
+      await registry.delete('minimal')
+      const created = await registry.create(input('audit'))
+      expect(created.id).toBe('audit')
+      await expect(registry.create(input('audit'))).rejects.toThrow('already exists')
+      expect((await registry.list()).definitions).toHaveLength(1)
+      const updated = await registry.update('audit', { prompt: 'Updated.', enabled: false })
+      expect(updated).toMatchObject({ prompt: 'Updated.', enabled: false })
+      await registry.setEnabled('audit', true)
+      await registry.appendDebug('audit', { status: 'report' })
+      await expect(registry.appendDebug('../escape', { status: 'report' })).rejects.toThrow('shadow id must match')
+      await registry.delete('audit')
+      expect((await registry.list()).definitions).toEqual([])
+      expect(await readFile(join(registry.logRoot, 'audit.jsonl'), 'utf8')).toContain('"status":"report"')
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('uses filename defaults and rethrows a definition-directory read failure', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      expect(parseShadowDefinition('---\n{}\n---\nbody', join(registry.root, 'default-id.md'))).toMatchObject({
+        id: 'default-id',
+        name: 'default-id',
+        enabled: true,
+        debug: false,
+        activationProbability: 0.3,
+        activeForModels: [],
+        tools: [],
+      })
+      await mkdir(home, { recursive: true })
+      await writeFile(registry.root, 'not a directory')
+      await expect(registry.list()).rejects.toThrow()
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('isolates invalid files and deterministic duplicate ids', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      await mkdir(registry.root, { recursive: true })
+      await writeFile(join(registry.root, 'a.md'), '---\nid: same\n---\nfirst\n')
+      await writeFile(join(registry.root, 'b.md'), '---\nid: same\n---\nsecond\n')
+      await writeFile(join(registry.root, 'bad.md'), 'not frontmatter')
+      const catalog = await registry.list()
+      expect(catalog.definitions.map(item => item.prompt)).toEqual(['first'])
+      expect(catalog.diagnostics).toHaveLength(2)
+      expect(catalog.diagnostics.map(item => item.error).join('\n')).toMatch(/duplicate id[\s\S]*must start/)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('serializes same-id mutations and never overwrites an invalid existing path', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      await registry.create(input('audit'))
+      const first = registry.update('audit', { name: 'First' })
+      const second = registry.update('audit', { prompt: 'Second' })
+      await Promise.all([first, second])
+      expect((await registry.list()).definitions[0]).toMatchObject({ name: 'First', prompt: 'Second' })
+      await writeFile(join(registry.root, 'broken.md'), 'broken')
+      await expect(registry.create(input('broken'))).rejects.toThrow('path already exists')
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+})

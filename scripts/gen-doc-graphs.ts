@@ -488,6 +488,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route.',
   },
   {
+    key: 'shadowMind',
+    pkg: 'shadow-mind-runtime',
+    title: 'Root background review orchestration',
+    mode: 'core',
+    consumers: ['tool-shadow-mind'],
+    note: 'Observes completed root tool turns, starts bounded fresh one-shot reviewers, and relays accepted durable reports; the management plugin consumes its definition, settings, and per-root control APIs.',
+  },
+  {
     key: 'agentTeams',
     pkg: 'agent-team',
     title: 'Agent Teams coordination domain',

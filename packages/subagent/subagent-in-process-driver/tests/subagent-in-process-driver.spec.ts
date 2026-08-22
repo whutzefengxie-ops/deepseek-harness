@@ -1,4 +1,4 @@
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { type Agent, type AgentOptions } from '@deepseek-ai/dsh-agent'
@@ -79,6 +79,35 @@ describe('startInProcessRun', () => {
     expect(child.options).toMatchObject({ provider: 'mock', model: 'mock' })
     expect(child.session.header.cwd).toBe('/workspace')
     await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
+    await run.dispose()
+  })
+
+  it('installs a complete per-run model selection before child publication', async () => {
+    const { ctx, parent } = await setup([])
+    const adapter = new MockAdapter([textResponse('selected answer')], {
+      efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
+      defaultEffort: ReasoningEffortId('high'),
+    })
+    ctx.llm.registerAdapter(['selected'], adapter)
+    const run = await startInProcessRun({
+      ...request(parent),
+      agentOptions: { maxTokens: 222 },
+      modelSelection: {
+        provider: 'selected',
+        model: 'selected-model',
+        reasoningEffort: ReasoningEffortId('high'),
+      },
+    }, {})
+
+    const child = ctx.agents.get(run.id)!
+    expect(child.options).toMatchObject({ provider: 'selected', model: 'selected-model', maxTokens: 222 })
+    await expect(run.result).resolves.toMatchObject({ stopReason: 'completed' })
+    expect(adapter.requests[0]).toMatchObject({
+      provider: 'selected',
+      model: 'selected-model',
+      reasoningEffort: ReasoningEffortId('high'),
+      maxTokens: 222,
+    })
     await run.dispose()
   })
 

@@ -33,6 +33,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
+| `@deepseek-ai/dsh-tool-shadow-mind` | `create_shadow`, `delete_shadow`, `disable_shadow`, `enable_shadow`, `get_shadow_config`, `list_shadows`, `update_shadow`, `update_shadow_config` | `ctx.tools`, `ctx.shadowMind`, `ctx.commands`, `ctx.approval` | `tool/call`, `tool/result`, `Shadow definition Markdown or settings through ctx.shadowMind` | - | The two read operations inspect runtime state. Six mutation tools require an `allowed-once` approval before the Shadow runtime changes a Markdown definition or user settings. |
 | `@deepseek-ai/dsh-tool-subagent` | `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered tool name is the load-time `toolName` config (default `subagent`); the schema above is that default. The shipped compositions load this package once per subagent backend, so the model additionally sees `subagent_fork` bound to the fork backend. Each instance's description, `run_in_background` parameter, and system-prompt policy follow its own `backgroundMode` and `enableRunInBackground`, so the two shipped schemas are not identical: `subagent` is `continuable` and defaults omitted calls to background with automatic settlement delivery, while `subagent_fork` stays `one-shot` and defaults them to foreground — see `packages/bundle/base/cordis.patch.yml` and `examples/acp-agent/cordis.yml`. |
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
 | `@deepseek-ai/dsh-tool-subagent-report` | `report` | `ctx.subagents`, `ctx.systemPrompt`, `a live continuable in-process child Agent` | `tool/call`, `tool/result`, `a user-role message in the direct parent session` | - | Registered per continuable in-process child rather than globally, so this schema is visible only inside such a child and survives its global `toolFilter`. The same contribution installs the child-scoped `tool:report` prompt section, which this catalog does not render. The parent-facing `send_message` tool is installed independently. |
@@ -1496,6 +1497,341 @@ Read the authorized session lineage around one session, including complete visib
 Source: [`packages/session-query/tool-session-query/src/index.ts`](../packages/session-query/tool-session-query/src/index.ts)
 
 The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies.
+
+<a id="deepseek-aidsh-tool-shadow-mind"></a>
+
+## `@deepseek-ai/dsh-tool-shadow-mind`
+
+### `create_shadow`
+
+Create one Markdown-backed Shadow definition. This changes local configuration and requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Lowercase stable id used as the filename."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable Shadow name."
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether automatic scheduling may select this Shadow."
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Whether completed runs append local JSONL diagnostics."
+    },
+    "activation_probability": {
+      "type": "number",
+      "description": "Independent probability from 0 through 1."
+    },
+    "active_for_models": {
+      "type": "array",
+      "description": "Optional model or provider/model glob filters.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "run_with_model": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional provider/model route; null clears the override."
+    },
+    "reasoning_effort": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional adapter-owned reasoning effort; null clears the override."
+    },
+    "timeout_seconds": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional positive run deadline; null clears the override."
+    },
+    "tools": {
+      "type": "array",
+      "description": "Extra tools added to read, grep, and glob.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Non-empty Shadow instructions."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "prompt"
+  ]
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `delete_shadow`
+
+Delete one Shadow definition while preserving its debug log. This requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing Shadow id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `disable_shadow`
+
+Disable one Shadow definition. This changes local configuration and requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing Shadow id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `enable_shadow`
+
+Enable one Shadow definition. This changes local configuration and requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing Shadow id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `get_shadow_config`
+
+Read the current resolved Shadow Mind scheduling configuration.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `list_shadows`
+
+List Shadow Mind definitions and isolated file diagnostics. This does not start a Shadow.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `update_shadow`
+
+Update selected fields of one Shadow definition. This changes local configuration and requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Existing Shadow id."
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable Shadow name."
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether automatic scheduling may select this Shadow."
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Whether completed runs append local JSONL diagnostics."
+    },
+    "activation_probability": {
+      "type": "number",
+      "description": "Independent probability from 0 through 1."
+    },
+    "active_for_models": {
+      "type": "array",
+      "description": "Optional model or provider/model glob filters.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "run_with_model": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional provider/model route; null clears the override."
+    },
+    "reasoning_effort": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional adapter-owned reasoning effort; null clears the override."
+    },
+    "timeout_seconds": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional positive run deadline; null clears the override."
+    },
+    "tools": {
+      "type": "array",
+      "description": "Extra tools added to read, grep, and glob.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Non-empty Shadow instructions."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+### `update_shadow_config`
+
+Update selected Shadow Mind scheduling settings. This changes local configuration and requires user approval.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "heartbeatProbability": {
+      "type": "number",
+      "description": "Turn-level heartbeat probability from 0 through 1."
+    },
+    "maxParallelShadows": {
+      "type": "number",
+      "description": "Positive integer concurrency bound per root."
+    },
+    "defaultShadowTimeoutSeconds": {
+      "type": "number",
+      "description": "Positive default run deadline."
+    },
+    "headlessDrainTimeoutSeconds": {
+      "type": "number",
+      "description": "Positive headless convergence deadline."
+    },
+    "resultBatchWindowMs": {
+      "type": "number",
+      "description": "Non-negative report batching window."
+    },
+    "defaultShadowModel": {
+      "type": "string",
+      "description": "Fallback provider/model route."
+    },
+    "defaultReasoningEffort": {
+      "type": "string",
+      "description": "Fallback adapter-owned reasoning effort."
+    },
+    "argumentDisclosure": {
+      "type": "string",
+      "description": "Tool-call argument projection policy.",
+      "enum": [
+        "redacted",
+        "full"
+      ]
+    },
+    "randomSeed": {
+      "type": "number",
+      "description": "Deterministic scheduler seed."
+    },
+    "maxPromptChars": {
+      "type": "number",
+      "description": "Positive complete prompt bound."
+    },
+    "maxReportChars": {
+      "type": "number",
+      "description": "Positive accepted report bound."
+    }
+  }
+}
+```
+
+Source: [`packages/shadow-mind/tool-shadow-mind/src/index.ts`](../packages/shadow-mind/tool-shadow-mind/src/index.ts)
+
+The two read operations inspect runtime state. Six mutation tools require an `allowed-once` approval before the Shadow runtime changes a Markdown definition or user settings.
 
 <a id="deepseek-aidsh-tool-subagent"></a>
 

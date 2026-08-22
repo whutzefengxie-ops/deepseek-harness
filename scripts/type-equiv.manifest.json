@@ -1974,6 +1974,51 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "MessageFeedbackDeleteResult",
       "source": "packages/feedback/message-feedback/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowDefinition",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowDiagnostic",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowCatalog",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "CreateShadowDefinition",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "UpdateShadowDefinition",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowMindSettings",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowMindConfig",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ActiveShadowStatus",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowMindStatus",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
     }
   ]
 }
