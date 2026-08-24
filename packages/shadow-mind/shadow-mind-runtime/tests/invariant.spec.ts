@@ -70,17 +70,18 @@ describe('Shadow Mind relay invariant', () => {
     [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'unknown' }], /known verdict/],
     [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'challenge', severity: 2 }], /severity/],
     [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'challenge', refs: [1] }], /refs/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 1, verdict: 'challenge', refs: [2] }], /capture watermark/, 3],
     [[{
       shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0,
       verdict: 'challenge', replacesRunIds: ['run-left'],
     }], /replace two distinct/],
-  ])('rejects malformed provenance %#', async (reports, message) => {
+  ])('rejects malformed provenance %#', async (reports, message, seq = 1) => {
     const ctx = await setup()
     expect(() => {
       ctx.emit(
         'session/event',
         Session.create(SessionId(`shadow-invariant-invalid-${String(reports.length)}`)),
-        relay(reports),
+        relay(reports, seq),
       )
     }).toThrow(message)
   })

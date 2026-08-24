@@ -38,8 +38,8 @@ function validate(event: SessionEvent, fail: InvariantFailure): void {
     }
     let previous = -1
     for (const ref of report.refs ?? []) {
-      if (!Number.isSafeInteger(ref) || ref <= 0 || ref <= previous || ref >= event.seq) {
-        fail('shadow-report refs must be ascending unique positive sequence numbers before the relay')
+      if (!Number.isSafeInteger(ref) || ref <= 0 || ref <= previous || ref > report.capturedThroughSeq) {
+        fail('shadow-report refs must be ascending unique positive sequence numbers at or before the capture watermark')
       }
       previous = ref
     }

@@ -71,25 +71,24 @@ async function saveSettings(scope: SettingsScope<ShadowMindSettings>, next: Shad
   }
   const current = snapshot.value
   const user = snapshot.user
-  const fields: readonly (keyof ShadowMindSettings)[] = [
-    'heartbeatProbability',
-    'maxParallelShadows',
-    'defaultShadowTimeoutSeconds',
-    'headlessDrainTimeoutSeconds',
-    'resultBatchWindowMs',
+  const optionalFields = [
     'defaultShadowModel',
     'defaultReasoningEffort',
-    'argumentDisclosure',
     'randomSeed',
-    'maxPromptChars',
-    'maxReportChars',
-  ]
-  for (const field of fields) {
-    const value = next[field]
-    if (value === undefined) {
-      if (typeof user === 'object' && user !== null && Object.hasOwn(user, field)) await scope.unset(field)
-    } else if (current[field] !== value) {
-      await scope.set(field, value)
+    'sessionShadowSoftBudgetChars',
+    'sessionShadowHardBudgetChars',
+    'frugalShadowModel',
+  ] as const satisfies readonly (keyof ShadowMindSettings)[]
+  for (const [field, value] of Object.entries(next)) {
+    const key = field as keyof ShadowMindSettings
+    if (JSON.stringify(current[key]) !== JSON.stringify(value)) {
+      await scope.set(key, value)
+    }
+  }
+  for (const field of optionalFields) {
+    if (!Object.hasOwn(next, field)
+      && typeof user === 'object' && user !== null && Object.hasOwn(user, field)) {
+      await scope.unset(field)
     }
   }
 }

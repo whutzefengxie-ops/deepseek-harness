@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
@@ -15,7 +15,10 @@ import {
 } from '../src/client/ShadowMindSettingsTab.tsx'
 import { en, type ShadowMindLocaleKey } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 const SETTINGS: ShadowMindSettings = {
   heartbeatProbability: 0.3,
@@ -196,6 +199,170 @@ describe('ShadowMindSettingsTab', () => {
     expect(await screen.findByText(en.sessionPaused)).toBeTruthy()
   })
 
+  it('edits every structured setting, discards it, and exposes pending save state', async () => {
+    let finishSave!: () => void
+    let settingsReady = true
+    const save = vi.fn(() => new Promise<void>((resolve) => { finishSave = resolve }))
+    const editableProps = props({
+      saveSettings: save,
+      useSettings: (selector: (value: unknown) => unknown) => selector(settingsReady
+        ? {
+          status: 'ready', value: SETTINGS, base: SETTINGS, user: {}, revision: 0,
+          writable: true, mode: 'host',
+        }
+        : {
+          status: 'loading', value: undefined, base: undefined, user: {}, revision: 1,
+          writable: false, mode: 'host',
+        }),
+    } as never)
+    const view = render(<ShadowMindSettingsTab {...editableProps} />)
+    await screen.findByText(en.sessionActive)
+
+    fireEvent.change(view.container.querySelector('#shadow-setting-argumentDisclosure')!, {
+      target: { value: 'full' },
+    })
+    fireEvent.change(view.container.querySelector('#shadow-setting-reasoningEffortLadder')!, {
+      target: { value: 'low\nhigh' },
+    })
+    for (const field of [
+      'preferIndependentVendor',
+      'valueLoopEnabled',
+      'stagnationEscalationEnabled',
+      'conflictSynthesisEnabled',
+    ]) {
+      fireEvent.change(view.container.querySelector(`#shadow-setting-${field}`)!, {
+        target: { value: field === 'valueLoopEnabled' ? 'false' : 'true' },
+      })
+    }
+    for (const [field, value] of [
+      ['sessionShadowSoftBudgetChars', '10000'],
+      ['sessionShadowHardBudgetChars', '20000'],
+      ['frugalShadowModel', 'deepseek/deepseek-chat'],
+    ]) {
+      fireEvent.change(view.container.querySelector(`#shadow-setting-${field}`)!, { target: { value } })
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: en.discard }))
+    expect((view.container.querySelector('#shadow-setting-argumentDisclosure') as HTMLSelectElement).value)
+      .toBe('redacted')
+
+    fireEvent.change(view.container.querySelector('#shadow-setting-heartbeatProbability')!, {
+      target: { value: '0.75' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.saveSettings }))
+    expect((await screen.findByRole('button', { name: en.saving }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { finishSave() })
+    expect(await screen.findByText(en.saved)).toBeTruthy()
+
+    settingsReady = false
+    view.rerender(<ShadowMindSettingsTab {...editableProps} />)
+    expect((screen.getByRole('button', { name: en.discard }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows disconnected and refresh failures without issuing a status request', async () => {
+    const catalog = vi.fn(() => Promise.reject(new Error('catalog offline')))
+    const status = vi.fn(() => Promise.resolve(STATUS))
+    const disconnected = props({
+      catalog,
+      status,
+      useSettings: (selector: (value: unknown) => unknown) => selector({
+        status: 'loading', value: undefined, base: undefined, user: {}, revision: 0,
+        writable: false, mode: 'host',
+      }),
+      useSessions: (selector: (value: unknown) => unknown) => selector({ current: undefined, byId: {} }),
+    } as never)
+    const view = render(<ShadowMindSettingsTab {...disconnected} />)
+
+    expect((await screen.findByRole('alert')).textContent).toContain(en.loadError)
+    expect(screen.getByText(en.noSession)).toBeTruthy()
+    expect(screen.getAllByText(en.loadError)).toHaveLength(2)
+    expect(status).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    await waitFor(() => { expect(catalog).toHaveBeenCalledTimes(2) })
+    view.unmount()
+  })
+
+  it('contains status failures and ignores settled requests after unmount', async () => {
+    const refreshStatus = vi.fn()
+      .mockResolvedValueOnce(STATUS)
+      .mockRejectedValueOnce(new Error('status offline'))
+    const view = render(<ShadowMindSettingsTab {...props({ status: refreshStatus })} />)
+    await screen.findByText(en.sessionActive)
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    expect((await screen.findByRole('alert')).textContent).toContain(en.loadError)
+    view.unmount()
+
+    let resolveStatus!: (value: ShadowMindStatus) => void
+    const pendingSuccess = new Promise<ShadowMindStatus>((resolve) => { resolveStatus = resolve })
+    const successView = render(<ShadowMindSettingsTab {...props({ status: () => pendingSuccess })} />)
+    successView.unmount()
+    await act(async () => { resolveStatus(STATUS) })
+
+    let rejectStatus!: (error: Error) => void
+    const pendingFailure = new Promise<ShadowMindStatus>((_resolve, reject) => { rejectStatus = reject })
+    const failureView = render(<ShadowMindSettingsTab {...props({ status: () => pendingFailure })} />)
+    failureView.unmount()
+    await act(async () => { rejectStatus(new Error('late failure')) })
+  })
+
+  it('shows a status load failure while the current Session remains selected', async () => {
+    render(<ShadowMindSettingsTab {...props({
+      status: () => Promise.reject(new Error('status unavailable')),
+    })} />)
+
+    expect((await screen.findByRole('alert')).textContent).toContain(en.loadError)
+    expect(screen.getByText(en.noSession)).toBeTruthy()
+  })
+
+  it('renders sparse telemetry and reports Error and non-Error operation failures', async () => {
+    const { lastRun: _lastRun, ...statusWithoutLastRun } = STATUS
+    const sparse = {
+      ...statusWithoutLastRun,
+      paused: true,
+      effectiveProbabilities: [],
+      valueLoop: [],
+      cooldowns: [{
+        shadowId: 'reviewer',
+        until: '2026-08-23T11:00:00.000Z',
+        patterns: ['spinning'],
+      }],
+      pendingEscalations: ['reviewer'],
+      recentReviews: [],
+      lastSynthesisFailure: 'conflicting reports',
+    } satisfies ShadowMindStatus
+    const { route: _route, childSessionId: _childSessionId, ...lastRunWithoutRoute } = STATUS.lastRun!
+    const completed = {
+      ...STATUS,
+      lastRun: {
+        ...lastRunWithoutRoute,
+        outcome: 'silent' as const,
+      },
+    }
+    const resume = vi.fn(() => Promise.resolve(completed))
+    const pause = vi.fn(() => Promise.reject(new Error('pause failed')))
+    const toggle = vi.fn(() => Promise.reject('toggle failed'))
+    const catalog = () => Promise.resolve({
+      definitionRoot: 'C:/dsh/shadow-minds',
+      definitions: [],
+      diagnostics: [{ path: 'broken.md', error: 'invalid frontmatter' }],
+    })
+    render(<ShadowMindSettingsTab {...props({
+      status: () => Promise.resolve(sparse), resume, pause, toggle, catalog,
+    })} />)
+
+    expect(await screen.findByText(en.sessionPaused)).toBeTruthy()
+    expect(screen.getByText(en.noCompletedRuns)).toBeTruthy()
+    expect(screen.getByText('conflicting reports')).toBeTruthy()
+    expect(screen.getByText(en.emptyDefinitions)).toBeTruthy()
+    expect(screen.getByText('broken.md')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.resume }))
+    expect(await screen.findByText(en.outcomeSilent)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.pause }))
+    expect((await screen.findByRole('status')).textContent).toContain(`${en.operationFailed}: pause failed`)
+    fireEvent.click(screen.getByRole('button', { name: en.toggle }))
+    expect((await screen.findByRole('status')).textContent).toContain(`${en.operationFailed}: toggle failed`)
+  })
+
   it('shows a component failure instead of leaving the Settings tab blank', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<ShadowMindSettingsTab {...props({
@@ -204,6 +371,15 @@ describe('ShadowMindSettingsTab', () => {
 
     expect(screen.getByRole('alert').textContent).toContain(en.renderErrorTitle)
     expect(screen.getByRole('alert').textContent).toContain('settings snapshot failed')
+  })
+
+  it('normalizes a non-Error component failure', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<ShadowMindSettingsTab {...props({
+      useSettings: () => { throw 'string failure' },
+    })} />)
+
+    expect(screen.getByRole('alert').textContent).toContain('string failure')
   })
 
   it('creates, edits, enables, and deletes complete Shadow definitions', async () => {
@@ -246,17 +422,50 @@ describe('ShadowMindSettingsTab', () => {
     expect(await screen.findByText('Security reviewer')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: en.addShadow }))
-    fireEvent.change(document.querySelector<HTMLInputElement>('#shadow-definition-id')!, {
-      target: { value: 'architecture' },
+    for (const [id, value] of [
+      ['shadow-definition-id', 'architecture'],
+      ['shadow-definition-name', 'Architecture reviewer'],
+      ['shadow-definition-probability', '0.8'],
+      ['shadow-definition-models', 'deepseek/*\nopenai/*'],
+      ['shadow-definition-run-model', 'deepseek/deepseek-reasoner'],
+      ['shadow-definition-effort', 'high'],
+      ['shadow-definition-timeout', '90'],
+      ['shadow-definition-tools', 'read\nsearch'],
+      ['shadow-definition-prefilters', 'long-output'],
+      ['shadow-definition-boostfilters', 'repeated-failure'],
+      ['shadow-definition-boostfactor', '2'],
+      ['shadow-definition-prompt', 'Review architecture risks.'],
+    ]) {
+      fireEvent.change(document.querySelector(`#${id}`)!, { target: { value } })
+    }
+    fireEvent.change(document.querySelector('#shadow-definition-capture')!, {
+      target: { value: 'since-compaction' },
     })
-    fireEvent.change(document.querySelector<HTMLInputElement>('#shadow-definition-name')!, {
-      target: { value: 'Architecture reviewer' },
+    fireEvent.change(document.querySelector('#shadow-definition-context')!, {
+      target: { value: 'minimal' },
     })
-    fireEvent.change(document.querySelector<HTMLTextAreaElement>('#shadow-definition-prompt')!, {
-      target: { value: 'Review architecture risks.' },
-    })
+    for (const checkbox of document.querySelectorAll<HTMLInputElement>('[data-shadow-editor] input[type="checkbox"]')) {
+      fireEvent.click(checkbox)
+    }
     fireEvent.click(screen.getByRole('button', { name: en.create }))
     await waitFor(() => { expect(create).toHaveBeenCalledOnce() })
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      id: 'architecture',
+      enabled: false,
+      debug: true,
+      activeForModels: ['deepseek/*', 'openai/*'],
+      runWithModel: 'deepseek/deepseek-reasoner',
+      reasoningEffort: 'high',
+      timeoutSeconds: 90,
+      tools: ['read', 'search'],
+      capture: 'since-compaction',
+      context: 'minimal',
+      thinkFirst: true,
+      preFilters: ['long-output'],
+      boostFilters: ['repeated-failure'],
+      boostFactor: 2,
+      holdout: true,
+    })
     expect(await screen.findByText('Architecture reviewer')).toBeTruthy()
 
     const architecture = screen.getByText('Architecture reviewer').closest('li')!
@@ -264,5 +473,9 @@ describe('ShadowMindSettingsTab', () => {
     fireEvent.click(architecture.querySelector<HTMLButtonElement>('button[data-confirm="true"]')!)
     await waitFor(() => { expect(remove).toHaveBeenCalledWith('architecture') })
     await waitFor(() => { expect(screen.queryByText('Architecture reviewer')).toBeNull() })
+
+    fireEvent.click(screen.getByRole('button', { name: en.addShadow }))
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    expect(document.querySelector('[data-shadow-editor]')).toBeNull()
   })
 })

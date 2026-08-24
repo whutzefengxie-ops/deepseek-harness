@@ -150,6 +150,18 @@ describe('Shadow scheduling predicates', () => {
       prefilterPredicates,
       { ...predicateContext, settings: resolveSettings({ lastReportCoversCount: 3 }) },
     )).toBeUndefined()
+
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'new task' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    const reset = { ...predicateContext, events: session.events, capturedThroughSeq: session.events.at(-1)!.seq }
+    expect(matchesPredicate(['last-report-covers'], prefilterPredicates, reset)).toBeUndefined()
+    appendRelay(session, 4, 'challenge', [1])
+    appendRelay(session, 5, 'challenge', [1])
+    const repeated = { ...predicateContext, events: session.events, capturedThroughSeq: session.events.at(-1)!.seq }
+    expect(matchesPredicate(['last-report-covers'], prefilterPredicates, repeated))
+      .toBe('last-report-covers')
   })
 
   it('ignores other Shadows and compares missing refs as empty envelopes', () => {

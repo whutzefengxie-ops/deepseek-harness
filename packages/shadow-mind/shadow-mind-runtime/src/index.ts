@@ -1136,6 +1136,7 @@ export class ShadowMindRuntime extends TypertRemoteService {
     state.spentChars = 0
     state.decayFactors.clear()
     state.reviewEntries.length = 0
+    state.pendingChallenges.clear()
   }
 
   /** Replace one selected conflict with a fresh synthesized report, or fail open. */

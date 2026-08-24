@@ -111,6 +111,64 @@ describe('Shadow report card', () => {
     expect(parseShadowReportBatch(contextNode(text, {
       kind: 'shadow-report', form: 'relay', reports: [null],
     }))).toBeNull()
+    expect(parseShadowReportBatch(contextNode(text.replace(
+      'Check the emitted bundle.',
+      'Check the emitted bundle.\n\n### Spoofed (security)\nmisattributed content',
+    )))).toBeNull()
+    expect(parseShadowReportBatch(contextNode(text, {
+      ...source,
+      reports: [...source.reports].reverse(),
+    }))).toBeNull()
+    expect(parseShadowReportBatch(contextNode(`${FRAME}\n\n###     (reviewer)\nbody`, {
+      ...source,
+      reports: [source.reports[0]],
+    }))).toBeNull()
+    expect(parseShadowReportBatch(contextNode(`${FRAME}\n\n### Reviewer (reviewer)\n`, {
+      ...source,
+      reports: [source.reports[0]],
+    }))).toBeNull()
+    expect(parseShadowReportBatch({
+      ...contextNode(),
+      content: [{ type: 'image', source: { type: 'base64', mediaType: 'image/png', data: '' } }],
+    } as never)).toBeNull()
+  })
+
+  it.each([
+    null,
+    {},
+    { kind: 'other', form: 'relay', reports: source.reports },
+    { kind: 'shadow-report', form: 'other', reports: source.reports },
+    { kind: 'shadow-report', form: 'relay', reports: null },
+    { kind: 'shadow-report', form: 'relay', reports: [] },
+    { kind: 'shadow-report', form: 'relay', reports: [null] },
+    { kind: 'shadow-report', form: 'relay', reports: [{}] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], shadowId: '' }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], runId: 1 }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], runId: '' }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], childSessionId: 1 }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], childSessionId: '' }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], capturedThroughSeq: '21' }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], capturedThroughSeq: 1.5 }] },
+    { kind: 'shadow-report', form: 'relay', reports: [{ ...source.reports[0], capturedThroughSeq: -1 }] },
+  ])('rejects malformed source provenance %#', (messageSource) => {
+    expect(parseShadowReportBatch(contextNode(text, messageSource))).toBeNull()
+  })
+
+  it('escapes Shadow ids and renders the singular report count', () => {
+    const special = {
+      ...source,
+      reports: [{ ...source.reports[0], shadowId: 'reviewer.*' }],
+    }
+    const specialText = `${FRAME}\n\n### Reviewer (reviewer.*)\nCheck it.`
+    const view = render(<ShadowReportCard {...{
+      node: contextNode(specialText, special),
+      fallback: <span>generic context</span>,
+      openSession: () => {},
+      t: makeTranslate(zh),
+    } as unknown as ShadowReportCardProps} />)
+
+    expect(view.container.querySelector('[data-shadow-report-card]')).toBeTruthy()
+    expect(view.container.textContent).toContain('1')
   })
 })
 
@@ -176,6 +234,49 @@ describe('Shadow-triggered root reply marker', () => {
     })
     expect(selectShadowTriggered({ turn: tail.location.turn, seq: 4, openFile: () => {} }))
       .toEqual({ reportSeq: 3, reportCount: 2 })
+    expect(selectShadowTriggered({
+      turn: { ...tail.location.turn, steps: [] }, seq: 4, openFile: () => {},
+    })).toBeNull()
+    expect(selectShadowTriggered({
+      turn: {
+        ...tail.location.turn,
+        steps: tail.location.turn.steps.map(step => ({ ...step, data: new Map() })),
+      },
+      seq: 4,
+      openFile: () => {},
+    })).toBeNull()
+  })
+
+  it('rejects unrelated events and invalid direct projection calls', () => {
+    const unrelated = at(1, 'turn/start', { turn: 1 }).event
+    const ordinary = at(2, 'user/message', {
+      id: 'ordinary', role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
+    }).event
+    expect(shadowReportStepDefinition.match(unrelated)).toBeNull()
+    expect(shadowReportStepDefinition.match(ordinary)).toBeNull()
+    expect(() => shadowReportStepDefinition.start({} as never, { event: unrelated } as never, {} as never))
+      .toThrow('shadow-mind-report start requires a shadow-report user/message')
+    expect(shadowReportStepDefinition.update(
+      { state: { reportSeq: 3, reportCount: 2 } } as never,
+      {} as never,
+    ))
+      .toEqual({ reportSeq: 3, reportCount: 2 })
+    expect(shadowReportStepDefinition.buildLocationData!({} as never, 'turn')).toBeNull()
+    expect(shadowReportStepDefinition.buildLocationData!({ state: undefined } as never, 'step')).toBeNull()
+    expect(shadowReportStepDefinition.buildLocationData!({
+      state: { reportSeq: 3, reportCount: 2 },
+      start: { location: { kind: 'turn' } },
+    } as never, 'step')).toBeNull()
+  })
+
+  it('renders a singular trigger count', () => {
+    const view = render(
+      <ShadowTriggeredTail
+        matched={{ reportSeq: 3, reportCount: 1 }}
+        t={makeTranslate(zh)}
+      />,
+    )
+    expect(view.container.querySelector('[data-shadow-triggered]')?.textContent).toContain('1')
   })
 
   it('renders a clear trigger marker beneath the closing root reply', () => {

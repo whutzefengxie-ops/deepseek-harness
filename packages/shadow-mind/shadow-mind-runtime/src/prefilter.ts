@@ -50,6 +50,10 @@ const lastReportCovers: ShadowPredicate = (context) => {
   const reports: { verdict?: unknown; refs?: unknown; capturedThroughSeq: number }[] = []
   for (const event of context.events) {
     if (event.seq > context.capturedThroughSeq) break
+    if (event.type === 'user/message' && event.data.source.kind === 'user') {
+      reports.length = 0
+      continue
+    }
     if (event.type !== 'user/message' || event.data.source.kind !== 'shadow-report') continue
     for (const report of event.data.source.reports) {
       if (report.shadowId === context.definition.id) reports.push(report)

@@ -57,8 +57,12 @@ function shadowSource(source: unknown): ShadowReportMessageSource | null {
 }
 
 function modelText(content: ContextMessageNode['content']): string | null {
-  if (content.some(block => block.type !== 'text')) return null
-  return content.map(block => block.type === 'text' ? block.text : '').join('')
+  let text = ''
+  for (const block of content) {
+    if (block.type !== 'text') return null
+    text += block.text
+  }
+  return text
 }
 
 /** Pair the ordered provenance list with the runtime-owned Markdown report sections. */
@@ -70,18 +74,18 @@ export function parseShadowReportBatch(node: ContextMessageNode): readonly Shado
   let cursor = 0
   for (const report of source.reports) {
     const pattern = new RegExp(`\\n### ([^\\r\\n]+) \\(${escapeRegExp(report.shadowId)}\\)\\r?\\n`, 'gu')
-    pattern.lastIndex = cursor
-    const match = pattern.exec(text)
-    if (match === null || match[1] === undefined) return null
-    markers.push({ name: match[1].trim(), markerStart: match.index, bodyStart: pattern.lastIndex })
-    cursor = pattern.lastIndex
+    const matches = [...text.matchAll(pattern)]
+    if (matches.length !== 1) return null
+    for (const match of matches) {
+      if (match.index < cursor) return null
+      const bodyStart = match.index + match[0].length
+      markers.push({ name: (match[1] as string).trim(), markerStart: match.index, bodyStart })
+      cursor = bodyStart
+    }
   }
-  const first = markers[0]
-  if (first === undefined) return null
   const entries: ShadowReportCardEntry[] = []
-  for (const [index, report] of source.reports.entries()) {
-    const marker = markers[index]
-    if (marker === undefined) return null
+  for (const [index, marker] of markers.entries()) {
+    const report = source.reports[index] as (typeof source.reports)[number]
     const next = markers[index + 1]
     const content = text.slice(marker.bodyStart, next?.markerStart ?? text.length).trim()
     if (content === '' || marker.name === '') return null

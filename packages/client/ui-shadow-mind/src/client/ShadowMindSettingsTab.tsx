@@ -74,9 +74,11 @@ class ShadowMindSettingsTabBoundary extends Component<
   }
 }
 
-type SettingsDraft = Record<keyof ShadowMindSettings, string>
+/** String-backed form state for every resolved Shadow Mind setting. */
+export type SettingsDraft = Record<keyof ShadowMindSettings, string>
 
-interface DefinitionDraft {
+/** String-backed form state for one editable Shadow definition. */
+export interface DefinitionDraft {
   id: string
   name: string
   enabled: boolean
@@ -139,7 +141,7 @@ const OUTCOME_KEYS = {
 } as const satisfies Record<ShadowRunOutcome, ShadowMindLocaleKey>
 
 /** Render one settings value as editable text. */
-function settingsDraft(value: ShadowMindSettings): SettingsDraft {
+export function settingsDraft(value: ShadowMindSettings): SettingsDraft {
   return {
     heartbeatProbability: String(value.heartbeatProbability),
     maxParallelShadows: String(value.maxParallelShadows),
@@ -179,7 +181,7 @@ function settingsDraft(value: ShadowMindSettings): SettingsDraft {
 }
 
 /** Build an empty create form. */
-function emptyDefinition(): DefinitionDraft {
+export function emptyDefinition(): DefinitionDraft {
   return {
     id: '',
     name: '',
@@ -203,7 +205,7 @@ function emptyDefinition(): DefinitionDraft {
 }
 
 /** Render one persisted definition into the complete edit form. */
-function definitionDraft(value: ShadowDefinition): DefinitionDraft {
+export function definitionDraft(value: ShadowDefinition): DefinitionDraft {
   return {
     id: value.id,
     name: value.name,
@@ -244,7 +246,7 @@ function integerAtLeast(value: number | undefined, minimum: number): number | un
 }
 
 /** Validate and convert a complete Shadow definition form. */
-function definitionInput(draft: DefinitionDraft): ShadowDefinitionInput | undefined {
+export function definitionInput(draft: DefinitionDraft): ShadowDefinitionInput | undefined {
   const probability = finite(draft.activationProbability)
   const timeout = finite(draft.timeoutSeconds)
   const boostFactor = finite(draft.boostFactor)
@@ -277,7 +279,7 @@ function definitionInput(draft: DefinitionDraft): ShadowDefinitionInput | undefi
 }
 
 /** Validate and convert the complete resolved settings form. */
-function settingsInput(draft: SettingsDraft): ShadowMindSettings | undefined {
+export function settingsInput(draft: SettingsDraft): ShadowMindSettings | undefined {
   const numbers = Object.fromEntries(NUMBER_FIELDS.map(field => [field, finite(draft[field])])) as
     Record<(typeof NUMBER_FIELDS)[number], number | undefined>
   const heartbeatProbability = numbers.heartbeatProbability
@@ -458,6 +460,7 @@ function ShadowMindSettingsTabContent(props: ShadowMindSettingsTabProps): ReactN
 
   const validSettings = settingsEdit === null ? undefined : settingsInput(settingsEdit)
   const validDefinition = definitionEdit === null ? undefined : definitionInput(definitionEdit)
+  const resolvedSettings = settings.status === 'ready' ? settings.value : undefined
   const settingsDirty = useMemo(() => settings.status === 'ready' && settings.value !== undefined
     && settingsEdit !== null && JSON.stringify(validSettings) !== JSON.stringify(settings.value),
   [settings, settingsEdit, validSettings])
@@ -474,19 +477,17 @@ function ShadowMindSettingsTabContent(props: ShadowMindSettingsTabProps): ReactN
     }
   }
 
-  const changeStatus = (operation: (sessionId: SessionId) => Promise<ShadowMindStatus>): void => {
-    if (currentSession === undefined) return
-    void run(async () => { setStatus(await operation(currentSession)) })
+  const changeStatus = (
+    sessionId: SessionId,
+    operation: (sessionId: SessionId) => Promise<ShadowMindStatus>,
+  ): void => {
+    void run(async () => { setStatus(await operation(sessionId)) })
   }
 
-  const submitDefinition = (): void => {
-    if (validDefinition === undefined) {
-      setMessage(t('invalidForm'))
-      return
-    }
+  const submitDefinition = (input: ShadowDefinitionInput): void => {
     void run(async () => {
-      if (editingId === null) await props.create(validDefinition)
-      else await props.update(validDefinition)
+      if (editingId === null) await props.create(input)
+      else await props.update(input)
       setDefinitionEdit(null)
       setEditingId(null)
       await reload()
@@ -549,9 +550,9 @@ function ShadowMindSettingsTabContent(props: ShadowMindSettingsTabProps): ReactN
               )}
             </dl>
             <div className={css.actions}>
-              <button type="button" disabled={busy || status.paused} onClick={() => { changeStatus(props.pause) }}>{t('pause')}</button>
-              <button type="button" disabled={busy || !status.paused} onClick={() => { changeStatus(props.resume) }}>{t('resume')}</button>
-              <button type="button" disabled={busy} onClick={() => { changeStatus(props.toggle) }}>{t('toggle')}</button>
+              <button type="button" disabled={busy || status.paused} onClick={() => { changeStatus(currentSession, props.pause) }}>{t('pause')}</button>
+              <button type="button" disabled={busy || !status.paused} onClick={() => { changeStatus(currentSession, props.resume) }}>{t('resume')}</button>
+              <button type="button" disabled={busy} onClick={() => { changeStatus(currentSession, props.toggle) }}>{t('toggle')}</button>
             </div>
           </>
         )}
@@ -614,17 +615,19 @@ function ShadowMindSettingsTabContent(props: ShadowMindSettingsTabProps): ReactN
               </label>
             ))}
             <div className={css.formActions}>
-              <button type="button" disabled={!settingsDirty || busy} onClick={() => {
-                if (settings.status === 'ready' && settings.value !== undefined) setSettingsEdit(settingsDraft(settings.value))
-              }}>{t('discard')}</button>
-              <button type="button" disabled={!settingsDirty || validSettings === undefined || busy} onClick={() => {
-                if (validSettings === undefined) return
-                void run(async () => {
-                  await props.saveSettings(validSettings)
-                  setSettingsEdit(settingsDraft(validSettings))
-                  setMessage(t('saved'))
-                })
-              }}>{t(busy ? 'saving' : 'saveSettings')}</button>
+              <button type="button" disabled={!settingsDirty || busy}
+                onClick={resolvedSettings === undefined
+                  ? undefined
+                  : () => { setSettingsEdit(settingsDraft(resolvedSettings)) }
+                }>{t('discard')}</button>
+              <button type="button" disabled={!settingsDirty || validSettings === undefined || busy}
+                onClick={validSettings === undefined ? undefined : () => {
+                  void run(async () => {
+                    await props.saveSettings(validSettings)
+                    setSettingsEdit(settingsDraft(validSettings))
+                    setMessage(t('saved'))
+                  })
+                }}>{t(busy ? 'saving' : 'saveSettings')}</button>
             </div>
           </div>
         )}
@@ -717,7 +720,10 @@ function ShadowMindSettingsTabContent(props: ShadowMindSettingsTabProps): ReactN
             <label className={css.check}><input type="checkbox" checked={definitionEdit.holdout}
               onChange={(event) => { setDefinitionEdit({ ...definitionEdit, holdout: event.currentTarget.checked }) }} />{t('holdout')}</label>
             <div className={css.formActions}><button type="button" disabled={busy} onClick={() => { setDefinitionEdit(null); setEditingId(null) }}>{t('cancel')}</button>
-              <button type="button" disabled={busy || validDefinition === undefined} onClick={submitDefinition}>{t(editingId === null ? 'create' : 'saveDefinition')}</button></div>
+              <button type="button" disabled={busy || validDefinition === undefined}
+                onClick={validDefinition === undefined ? undefined : () => { submitDefinition(validDefinition) }}>
+                {t(editingId === null ? 'create' : 'saveDefinition')}
+              </button></div>
           </div>
         </section>
       )}

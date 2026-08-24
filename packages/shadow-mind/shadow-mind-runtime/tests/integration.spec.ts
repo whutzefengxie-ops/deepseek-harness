@@ -740,6 +740,41 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
     })
   })
 
+  it('drops pending challenge observations when new user intent resets governance', async () => {
+    const { ctx, root } = await setup([], { config: { valueLoopWindowTurns: 1 } })
+    root.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'challenge relay' }],
+      source: {
+        kind: 'shadow-report',
+        form: 'relay',
+        reports: [{
+          shadowId: 'reviewer',
+          runId: 'superseded-run',
+          childSessionId: SessionId('superseded-child'),
+          capturedThroughSeq: 0,
+          verdict: 'challenge',
+        }],
+      },
+    }), { surfaceOp: 'append' })
+    expect(ctx.shadowMind.status(root).valueLoop).toMatchObject([{
+      shadowId: 'reviewer',
+      challenges: 1,
+      ignored: 0,
+    }])
+
+    ctx.emit('agent/inbox/inserted', {
+      agent: root,
+      message: createUserMessage({ content: [{ type: 'text', text: 'new task' }], source: { kind: 'user' } }),
+    })
+    root.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    expect(ctx.shadowMind.status(root).valueLoop).toMatchObject([{
+      shadowId: 'reviewer',
+      challenges: 1,
+      ignored: 0,
+    }])
+  })
+
   it('applies minimal context and think-first through the real spawn provider', async () => {
     const { ctx, adapter, root } = await setup([
       toolCallResponse('read-root', 'read', { path: 'fixture.txt' }),

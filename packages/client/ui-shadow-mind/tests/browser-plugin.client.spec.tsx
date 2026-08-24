@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { ConversationEventRegistry } from '@deepseek-ai/dsh-client-runtime/src/client/conversation/event-registry.ts'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ShadowMindSettings } from '@deepseek-ai/dsh-shadow-mind-runtime/types'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { ShadowMindSettingsTab } from '../src/client/ShadowMindSettingsTab.tsx'
@@ -13,7 +14,7 @@ import type { ShadowMindSettingsTabInjected } from '../src/client/ShadowMindSett
 
 usePinnedBrowserLanguages('zh-CN')
 
-const SETTINGS = {
+const SETTINGS: ShadowMindSettings = {
   heartbeatProbability: 0.3,
   maxParallelShadows: 2,
   defaultShadowTimeoutSeconds: 120,
@@ -105,7 +106,7 @@ async function bench() {
   }
   const remote = new RemoteService(ctx)
   const settings = {
-    getSnapshot: () => ({
+    getSnapshot: vi.fn<() => SettingsScopeSnapshot<ShadowMindSettings>>(() => ({
       status: 'ready' as const,
       value: SETTINGS,
       base: SETTINGS,
@@ -113,22 +114,23 @@ async function bench() {
       revision: 0,
       writable: true,
       mode: 'host' as const,
-    }),
+    })),
     subscribe: () => () => {},
-    set: vi.fn(() => Promise.resolve()),
-    unset: vi.fn(() => Promise.resolve()),
+    set: vi.fn<(field: string, value: unknown) => Promise<void>>(() => Promise.resolve()),
+    unset: vi.fn<(field: string) => Promise<void>>(() => Promise.resolve()),
   }
   ctx.provide('settingsScope', { bind: vi.fn(() => settings) })
   const notify = vi.fn()
   const conversation = { input: { for: vi.fn(() => ({ notify })) } }
   const sessionScope = { get: vi.fn(() => conversation) }
   const sessionId = 'blank-session' as SessionId
-  ctx.provide('sessions', {
+  const sessions = {
     list: { getSnapshot: () => ({ current: sessionId }), subscribe: () => () => {} },
     scope: vi.fn(() => sessionScope),
     open: vi.fn(),
-  })
-  return { ctx, slots: ctx.slots, locale, remote, shadowMind, unmount, notify, sessionId }
+  }
+  ctx.provide('sessions', sessions)
+  return { ctx, slots: ctx.slots, locale, remote, sessions, settings, shadowMind, unmount, notify, sessionId }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -162,6 +164,10 @@ describe('ui-shadow-mind browser plugin', () => {
     expect(resolveSlotLabel(entry.options.label)).toBe('Shadow Mind')
     expect(b.slots.entries('conversation.chat.contextview')[0]?.options)
       .toMatchObject({ key: 'shadow-report' })
+    const reportInjected = (b.slots.entries('conversation.chat.contextview')[0]!.inject as
+      unknown as () => { openSession: (sessionId: SessionId) => void })()
+    reportInjected.openSession('shadow-child' as SessionId)
+    expect(b.sessions.open).toHaveBeenCalledWith('shadow-child')
     expect(b.slots.entries('conversation.chat.turnTail')).toHaveLength(1)
     expect(b.ctx.conversationEvents.entries().map(definition => definition.kind))
       .toEqual(['shadow-mind-report'])
@@ -196,6 +202,14 @@ describe('ui-shadow-mind browser plugin', () => {
     b.ctx.emit('command/executed', b.sessionId, 'shadow', { kind: 'error', text: 'Shadow failed.' })
     expect(b.notify).toHaveBeenCalledWith('error', 'Shadow failed.')
     b.ctx.emit('command/executed', b.sessionId, 'goal', { kind: 'success', text: 'ignored' })
+    b.ctx.emit('command/executed', b.sessionId, 'shadow', { kind: 'success' } as never)
+    expect(b.notify).toHaveBeenCalledTimes(2)
+
+    b.sessions.scope.mockReturnValueOnce(undefined as never)
+    b.ctx.emit('command/executed', b.sessionId, 'shadow', { kind: 'success', text: 'missing scope' })
+    const get = vi.fn(() => undefined)
+    b.sessions.scope.mockReturnValueOnce({ get } as never)
+    b.ctx.emit('command/executed', b.sessionId, 'shadow', { kind: 'success', text: 'missing conversation' })
     expect(b.notify).toHaveBeenCalledTimes(2)
 
     await fiber.dispose()
@@ -218,6 +232,112 @@ describe('ui-shadow-mind browser plugin', () => {
     await expect(injected.catalog()).rejects.toThrow(
       'shadowMind.catalog failed: REMOTE_ERROR: unavailable',
     )
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('forwards every Settings administration operation to its Remote method', async () => {
+    const b = await bench()
+    declare(b.slots)
+    const definition = { id: 'reviewer' }
+    const initialStatus = await b.shadowMind.status()
+    if (!initialStatus.ok) throw new Error('status fixture failed')
+    const status = initialStatus.value
+    for (const method of ['create', 'update', 'setEnabled'] as const) {
+      b.shadowMind[method].mockResolvedValue({ ok: true, value: definition })
+    }
+    b.shadowMind.delete.mockResolvedValue({ ok: true, value: undefined })
+    for (const method of ['status', 'pause', 'resume', 'toggle'] as const) {
+      b.shadowMind[method].mockResolvedValue({ ok: true, value: status })
+    }
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+    const input = { id: 'reviewer' }
+
+    await expect(injected.create(input as never)).resolves.toBe(definition)
+    await expect(injected.update(input as never)).resolves.toBe(definition)
+    await expect(injected.setEnabled('reviewer', false)).resolves.toBe(definition)
+    await expect(injected.delete('reviewer')).resolves.toBeUndefined()
+    await expect(injected.status(b.sessionId)).resolves.toBe(status)
+    await expect(injected.pause(b.sessionId)).resolves.toBe(status)
+    await expect(injected.resume(b.sessionId)).resolves.toBe(status)
+    await expect(injected.toggle(b.sessionId)).resolves.toBe(status)
+    expect(b.shadowMind.setEnabled).toHaveBeenCalledWith('reviewer', false)
+    expect(b.shadowMind.delete).toHaveBeenCalledWith('reviewer')
+
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it.each([
+    { status: 'ready', value: SETTINGS, writable: false },
+    { status: 'loading', value: SETTINGS, writable: true },
+    { status: 'ready', value: undefined, writable: true },
+  ])('rejects a non-writable settings snapshot %#', async (snapshot) => {
+    const b = await bench()
+    declare(b.slots)
+    b.settings.getSnapshot.mockReturnValue({
+      ...snapshot,
+      base: SETTINGS,
+      user: {},
+      revision: 1,
+      mode: 'host',
+    } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+
+    await expect(injected.saveSettings(SETTINGS)).rejects.toThrow('Shadow Mind settings are not writable')
+
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('persists review-quality settings and clears removed optional overrides', async () => {
+    const b = await bench()
+    declare(b.slots)
+    b.settings.getSnapshot.mockReturnValue({
+      status: 'ready',
+      value: {
+        ...SETTINGS,
+        sessionShadowSoftBudgetChars: 10_000,
+        sessionShadowHardBudgetChars: 20_000,
+        frugalShadowModel: 'deepseek/deepseek-chat',
+      },
+      base: SETTINGS,
+      user: {
+        sessionShadowSoftBudgetChars: 10_000,
+        sessionShadowHardBudgetChars: 20_000,
+        frugalShadowModel: 'deepseek/deepseek-chat',
+      },
+      revision: 1,
+      writable: true,
+      mode: 'host',
+    })
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+
+    await injected.saveSettings({
+      ...SETTINGS,
+      longOutputBoostChars: 60_000,
+      reasoningEffortLadder: ['low', 'high'],
+      conflictSynthesisEnabled: true,
+    })
+
+    expect(b.settings.set).toHaveBeenCalledWith('longOutputBoostChars', 60_000)
+    expect(b.settings.set).toHaveBeenCalledWith('reasoningEffortLadder', ['low', 'high'])
+    expect(b.settings.set).toHaveBeenCalledWith('conflictSynthesisEnabled', true)
+    expect(b.settings.unset.mock.calls.map(([field]) => field)).toEqual([
+      'sessionShadowSoftBudgetChars',
+      'sessionShadowHardBudgetChars',
+      'frugalShadowModel',
+    ])
+
     await fiber.dispose()
     await b.ctx.fiber.dispose()
   })

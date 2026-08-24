@@ -162,9 +162,7 @@ function resolveTypeName(
       violations.push(`${ctx.rel}: '${name}' aliases '${imp.imported}' across a package-local import; the catalog pastes declarations verbatim, so keep package-local config types unaliased.`)
       return null
     }
-    const abs = resolve(dirname(ctx.abs), imp.specifier)
-    const rel = ctx.rel.slice(0, ctx.rel.lastIndexOf('/') + 1) + imp.specifier.replace(/^\.\//, '')
-    const target = loadFile(abs, rel, cache)
+    const target = loadRelativeFile(ctx, imp.specifier, cache)
     return resolveTypeName(target, imp.imported, cache, violations)
   }
   return { ref: { alias: name, imported: imp.imported, specifier: imp.specifier } }
@@ -244,11 +242,16 @@ function parsePath(path: string): PathStep[] {
   return steps
 }
 
-/** Load a package-relative import target as a FileCtx. */
-function loadRelative(world: World, from: FileCtx, specifier: string): FileCtx {
+/** Load a package-relative import target through a caller-owned file cache. */
+function loadRelativeFile(from: FileCtx, specifier: string, cache: Map<string, FileCtx>): FileCtx {
   const abs = resolve(dirname(from.abs), specifier)
   const rel = from.rel.slice(0, from.rel.lastIndexOf('/') + 1) + specifier.replace(/^\.\//, '')
-  return loadFile(abs, rel, world.cache)
+  return loadFile(abs, rel, cache)
+}
+
+/** Load a package-relative import target from the catalog world. */
+function loadRelative(world: World, from: FileCtx, specifier: string): FileCtx {
+  return loadRelativeFile(from, specifier, world.cache)
 }
 
 /** Find a type declaration EXPORTED (directly or via re-export chains) from a
@@ -574,9 +577,7 @@ function findSchemaExpr(
       violations.push(`${ctx.rel}: package-local schema '${initializer.text}' must use a named import.`)
       return null
     }
-    const abs = resolve(dirname(ctx.abs), imp.specifier)
-    const rel = ctx.rel.slice(0, ctx.rel.lastIndexOf('/') + 1) + imp.specifier.replace(/^\.\//, '')
-    const target = loadFile(abs, rel, cache)
+    const target = loadRelativeFile(ctx, imp.specifier, cache)
     const targetExpr = findExportedConstInitializer(target, imp.imported)
     if (!targetExpr) {
       violations.push(`${ctx.rel}: package-local schema import '${initializer.text}' has no exported const '${imp.imported}' in ${target.rel}.`)
