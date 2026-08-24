@@ -179,7 +179,7 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
   it('contains provider startup and disposal failures', async () => {
     const failingProvider: SubagentProvider = {
       ...resultProvider({ output: [], stopReason: 'completed' }),
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- verifies the unknown provider-rejection boundary.
+      // A non-Error rejection exercises provider-rejection normalization.
       start: () => Promise.reject('provider rejected with a non-Error value'),
     }
     const failed = await setup([
@@ -204,7 +204,7 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
     ], {
       provider: resultProvider(
         resultFailure.promise,
-        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- verifies the unknown disposal-rejection boundary.
+        // A non-Error rejection exercises disposal-rejection normalization.
         () => Promise.reject('dispose rejected with a non-Error value'),
       ),
     })
