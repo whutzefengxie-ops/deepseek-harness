@@ -291,7 +291,42 @@ describe('dsh-subagent-spawn-in-process', () => {
       toolFilter: true,
       persona: true,
       modelSelection: true,
+      contextInheritance: true,
+      thinkFirst: true,
     })
+  })
+
+  it('opens tools only after one tool-free think-first request', async () => {
+    const { ctx, parent, adapter } = await setup([
+      textResponse('Plan: inspect the numbered evidence before deciding.'),
+      toolCallResponse('structured-result', STRUCTURED_OUTPUT_TOOL, { answer: 42 }),
+    ])
+    const run = await start(ctx, 'spawn', {
+      prompt: [{ type: 'text', text: 'produce the answer' }],
+      parent,
+      thinkFirst: true,
+      outputSchema: {
+        type: 'object',
+        properties: { answer: { type: 'number' } },
+        required: ['answer'],
+      },
+    })
+    await expect(run.result).resolves.toMatchObject({
+      stopReason: 'completed',
+      structured: { answer: 42 },
+    })
+    expect(adapter.requests).toHaveLength(2)
+    expect(adapter.requests[0]?.tools).toBeUndefined()
+    expect(adapter.requests[1]?.tools?.map(tool => tool.name)).toContain(STRUCTURED_OUTPUT_TOOL)
+    expect(JSON.stringify(adapter.requests[1]?.messages)).toContain('Planning is complete')
+    const headers = run.localAgent?.session.events.filter(
+      event => event.type === 'request/header',
+    ) ?? []
+    expect(headers).toHaveLength(2)
+    expect(headers[0]?.type === 'request/header' && headers[0].data.header.tools).toBeUndefined()
+    expect(headers[1]?.type === 'request/header' && headers[1].data.header.tools?.map(tool => tool.name))
+      .toContain(STRUCTURED_OUTPUT_TOOL)
+    await run.dispose()
   })
 
   it('unregisters the provider when its fiber is disposed (HMR safety)', async () => {

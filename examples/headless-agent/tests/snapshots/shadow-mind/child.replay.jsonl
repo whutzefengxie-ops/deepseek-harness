@@ -1,6 +1,11 @@
-{"type":"session","version":0,"id":"shadow-mind-child","createdAt":2,"delegationDepth":1}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"tool-call-delta","index":0,"id":"shadow-result","name":"structured_output","argumentsDelta":"{\"status\":\"report\",\"content\":\"SHADOW_ACTIONABLE_FINDING\"}"}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"shadow-result","name":"structured_output","arguments":"{\"status\":\"report\",\"content\":\"SHADOW_ACTIONABLE_FINDING\"}"}}}}
+{"type":"session","version":0,"id":"shadow-mind-probe-planner","createdAt":2,"delegationDepth":1}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"text-delta","index":0,"text":"PLAN_ANCHORED_SEQS_15_16"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"PLAN_ANCHORED_SEQS_15_16"}}}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
-{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-start","index":0,"blockType":"tool-call"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"tool-call-delta","index":0,"id":"shadow-result","name":"structured_output","argumentsDelta":"{\"status\":\"report\",\"content\":\"{{fromRequest:Snapshot content: ([A-Z_]+)}}\",\"verdict\":\"{{fromRequest:Snapshot verdict: (challenge|confirm|uncertain)}}\",\"severity\":{{fromRequest:Snapshot severity: ([0-9.]+)}},\"refs\":[15,16]}"}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"shadow-result","name":"structured_output","arguments":"{\"status\":\"report\",\"content\":\"{{fromRequest:Snapshot content: ([A-Z_]+)}}\",\"verdict\":\"{{fromRequest:Snapshot verdict: (challenge|confirm|uncertain)}}\",\"severity\":{{fromRequest:Snapshot severity: ([0-9.]+)}},\"refs\":[15,16]}"}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"usage","usage":{"inputTokens":10,"outputTokens":5}}}}
+{"type":"assistant/chunk","data":{"turn":1,"step":2,"chunk":{"type":"finish","reason":{"kind":"tool-calls"}}}}

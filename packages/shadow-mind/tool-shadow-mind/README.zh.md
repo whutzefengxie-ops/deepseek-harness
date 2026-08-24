@@ -10,13 +10,13 @@
 
 `list_shadows` 与 `get_shadow_config` 只读。每次创建、更新、启用、禁用、删除或 settings 写入都会使用精确的调用 agent、工具名称、call id、signal 和人类可读原因调用 `ctx.approval.request()`。只有 `allowed-once` 会提交变更；拒绝、不可用、取消或更宽泛的结果都会失败，且不会更改磁盘或 settings。非 agent 调用方无法变更配置。
 
-定义输出是稳定的格式化 JSON，并省略源路径。创建操作默认令 `enabled` 为 true、`debug` 为 false、`activation_probability` 为 `0.3`，数组字段为空。`update_shadow` 要求至少提供一个字段。删除会移除定义，但保留其运行时调试日志。`update_shadow_config` 要求至少提供一项设置，并在持久化时使用运行时 settings schema 验证。
+定义输出是稳定的格式化 JSON，并省略源路径。创建操作默认令 `enabled` 为 true、`debug` 为 false、`activation_probability` 为 `0.3`、`capture` 为 `full`、`context` 为 `standard`、`think_first` 与 `holdout` 为 false、`boost_factor` 为 `1`，数组字段为空。创建与更新 schema 还公开具名 prefilter 与 boost。Holdout literal 被刻意排除：它们只存在于 owner 侧 sidecar，没有任何工具读取或写入它们。`update_shadow` 要求至少提供一个字段。删除会移除定义，但保留其运行时调试日志。`update_shadow_config` 要求至少提供一项设置，并通过运行时 schema 验证公开全部实时调度、检测器、value-loop、预算、衰减与综合字段。
 
 8 个工具都使用通用卡片。读取操作声明 read 展示；变更操作声明 execute 展示。注册项是 Cordis effect，并在插件卸载时消失。
 
 ## 命令
 
-`/shadow status|pause|resume|toggle` 只控制当前 root agent。空输入等同于 `status`；无效输入返回用法。暂停会推进 root 取消 epoch 并中止已准入 Shadow 工作，但定义与实时全局设置保持不变。后代 agent 会被运行时服务拒绝。
+`/shadow status|pause|resume|toggle` 只控制当前 root agent。空输入等同于 `status`；无效输入返回用法。每条成功命令都会报告活动与等待工作、已准入运行、prefilter skip、有效概率、预算消耗与层级、冷却、待处理提升、value-loop 计数、综合总数、近期报告元数据，以及存在时的最近终态结果。暂停会推进 root 取消 epoch 并中止已准入 Shadow 与综合工作，但定义与实时全局 settings 保持不变。后代 agent 会被运行时服务拒绝。
 
 ## 失败
 

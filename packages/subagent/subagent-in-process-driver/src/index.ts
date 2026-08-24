@@ -44,6 +44,10 @@ export {
   STRUCTURED_OUTPUT_INSTRUCTION,
 } from './structured.ts'
 
+/** Model-visible continuation injected after the tool-free planning request. */
+export const THINK_FIRST_CONTINUATION
+  = 'Planning is complete. Now investigate with the available tools and submit the required final result.'
+
 /** Map a session turn outcome to the subagent seam's terminal vocabulary. */
 function toStopReason(reason: TurnEndReason | undefined): SubagentStopReason {
   switch (reason?.kind) {
@@ -85,6 +89,35 @@ function attachDescriptorAppend(childCtx: Context, descriptor: SubagentDescripto
       agent.session.append('subagent/descriptor', descriptor)
     }
     return decision
+  })
+}
+
+/** Remove ordinary runtime context and pre-step additions from one child scope. */
+function attachMinimalContext(childCtx: Context): void {
+  childCtx.systemPrompt.suppressRuntimeContext()
+  childCtx.on('agent/pre-step', async ({ messages }, next) => {
+    const decision = await next()
+    return decision.kind === 'reject' ? decision : { ...decision, messages }
+  })
+}
+
+/** Keep the first live request tool-free, then steer exactly one investigation step. */
+function attachThinkFirst(childCtx: Context, activationBoundary: number): void {
+  const child = childCtx.agent as Agent
+  childCtx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+    const transformed = await next()
+    const planned = child.session.events.some(event =>
+      event.seq >= activationBoundary && event.type === 'assistant/message')
+    return planned ? transformed : { ...transformed, tools: [] }
+  })
+  let continued = false
+  childCtx.on('agent/turn-stopping', ({ agent }) => {
+    if (continued) return
+    continued = true
+    agent.steer(createUserMessage({
+      content: [{ type: 'text', text: THINK_FIRST_CONTINUATION }],
+      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-subagent-in-process-driver' },
+    }))
   })
 }
 
@@ -132,6 +165,8 @@ export async function startInProcessRun(
     if (request.outputSchema !== undefined) {
       structured = attachStructuredRuntime(childCtx, request.outputSchema)
     }
+    if (request.contextInheritance === 'none') attachMinimalContext(childCtx)
+    if (request.thinkFirst === true) attachThinkFirst(childCtx, activationBoundary)
     attachDescriptorAppend(childCtx, request.descriptor)
   }
 

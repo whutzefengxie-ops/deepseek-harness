@@ -50,6 +50,7 @@ const settlementScenarioDir = join(snapshotsDir, 'subagent-settlement')
 const settlementConfigPath = fileURLToPath(new URL('../subagent-settlement.cordis.snapshot.yml', import.meta.url))
 const shadowMindScenarioDir = join(snapshotsDir, 'shadow-mind')
 const shadowMindConfigPath = fileURLToPath(new URL('../shadow-mind.cordis.snapshot.yml', import.meta.url))
+const shadowMindProbePath = fileURLToPath(new URL('../../../packages/shadow-mind/shadow-mind-runtime/examples/shadow-minds/contrarian.md', import.meta.url))
 const teamConfigPath = fileURLToPath(new URL('../team.cordis.snapshot.yml', import.meta.url))
 const startupFailureConfigPath = fileURLToPath(new URL('./fixtures/startup-activation-error/cordis.yml', import.meta.url))
 const startupFailureExpected = join(snapshotsDir, 'startup-activation-error', 'stderr.expected.txt')
@@ -959,8 +960,18 @@ describe('headless stream-json snapshots', () => {
   it('waits for a fresh Shadow report and its root follow-up', async () => {
     const parentReplay = join(shadowMindScenarioDir, 'parent.replay.jsonl')
     const parentOverride = join(shadowMindScenarioDir, 'parent.override.json')
-    const childReplay = join(shadowMindScenarioDir, 'child.replay.jsonl')
-    const childExpected = join(shadowMindScenarioDir, 'child.expected.jsonl')
+    const childReplays = [
+      join(shadowMindScenarioDir, 'child.replay.jsonl'),
+      join(shadowMindScenarioDir, 'challenger.replay.jsonl'),
+      join(shadowMindScenarioDir, 'confirmer.replay.jsonl'),
+      join(shadowMindScenarioDir, 'synthesizer.replay.jsonl'),
+    ]
+    const childExpectedByLabel = new Map([
+      ['shadow:probe-planner', join(shadowMindScenarioDir, 'child.expected.jsonl')],
+      ['shadow:challenger', join(shadowMindScenarioDir, 'challenger.expected.jsonl')],
+      ['shadow:confirmer', join(shadowMindScenarioDir, 'confirmer.expected.jsonl')],
+      ['shadow:synthesizer', join(shadowMindScenarioDir, 'synthesizer.expected.jsonl')],
+    ])
     const streamExpected = join(shadowMindScenarioDir, 'stream-json.expected.jsonl')
     const task = 'Read fixture.txt, then use any background Shadow report before giving the final answer.'
     let runCwd = ''
@@ -975,7 +986,7 @@ describe('headless stream-json snapshots', () => {
       env: {
         DSH_SNAPSHOT_FILE: parentReplay,
         DSH_SNAPSHOT_OVERRIDE: parentOverride,
-        DSH_SNAPSHOT_CHILD_FILES: childReplay,
+        DSH_SNAPSHOT_CHILD_FILES: childReplays.join(delimiter),
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
       prepare: async (cwd) => {
@@ -983,49 +994,127 @@ describe('headless stream-json snapshots', () => {
         await writeFile(join(cwd, 'fixture.txt'), 'ROOT_TOOL_SECRET\n')
         const definitions = join(cwd, '.dsh', 'shadow-minds')
         await mkdir(definitions, { recursive: true })
-        await writeFile(join(definitions, 'reviewer.md'), [
+        const probeDefinition = (await readFile(shadowMindProbePath, 'utf8'))
+          .replace('id: contrarian', 'id: probe-planner')
+          .replace('name: Contrarian Shadow', 'name: Probe planner')
+          .replace('enabled: false', 'enabled: true')
+          .replace('activation_probability: 0.3', 'activation_probability: 1')
+          .replace('capture: since-compaction', 'capture: since-compaction\ncontext: minimal\nthink_first: true')
+          + '\nSnapshot content: PROBE_LIBRARY_FINDING\nSnapshot verdict: uncertain\nSnapshot severity: 0.2\n'
+        await writeFile(join(definitions, 'a-probe-planner.md'), probeDefinition)
+        await writeFile(join(definitions, 'b-challenger.md'), [
           '---',
-          'id: reviewer',
-          'name: Independent reviewer',
+          'id: challenger',
+          'name: Evidence challenger',
           'enabled: true',
           'debug: false',
           'activation_probability: 1',
           'active_for_models: []',
           'tools: []',
+          'context: minimal',
+          'think_first: true',
           '---',
           '',
-          'Report concrete risks that the root agent can act on.',
+          'Challenge only claims contradicted by the numbered trajectory.',
+          'Snapshot content: SHADOW_CHALLENGE_FINDING',
+          'Snapshot verdict: challenge',
+          'Snapshot severity: 0.8',
+          '',
+        ].join('\n'))
+        await writeFile(join(definitions, 'c-confirmer.md'), [
+          '---',
+          'id: confirmer',
+          'name: Evidence confirmer',
+          'enabled: true',
+          'debug: false',
+          'activation_probability: 1',
+          'active_for_models: []',
+          'tools: []',
+          'context: minimal',
+          'think_first: true',
+          '---',
+          '',
+          'Confirm only claims supported by the numbered trajectory.',
+          'Snapshot content: SHADOW_CONFIRM_FINDING',
+          'Snapshot verdict: confirm',
+          'Snapshot severity: 0.7',
+          '',
+        ].join('\n'))
+        await writeFile(join(definitions, 'synthesizer.md'), [
+          '---',
+          'id: synthesizer',
+          'name: Conflict synthesizer',
+          'enabled: true',
+          'debug: false',
+          'activation_probability: 0',
+          'active_for_models: []',
+          'tools: []',
+          '---',
+          '',
+          'Choose the report best supported by its numbered references.',
           '',
         ].join('\n'))
       },
       inspect: async (cwd) => {
         const logs = await persistedLogs(cwd)
-        expect(logs).toHaveLength(2)
+        expect(logs).toHaveLength(5)
         const parent = logs.find(log => typeof log.header.parentSession !== 'string')
-        const child = logs.find(log => typeof log.header.parentSession === 'string')
-        if (parent === undefined || child === undefined) throw new Error('missing persisted Shadow root or child log')
+        const children = logs.filter(log => typeof log.header.parentSession === 'string')
+        if (parent === undefined || children.length !== 4) throw new Error('missing persisted Shadow root or child logs')
 
         const parentRecords = parseJsonl(parent.content)
-        const childRecords = parseJsonl(child.content)
         expect(parentRecords.filter(record => record.type === 'tool/call').map((record) => {
           return (record.data as JsonObject | undefined)?.name
         })).toEqual(['read'])
-        expect(child.header).toMatchObject({
-          parentSession: parent.header.id,
-          delegationDepth: 1,
-        })
-        expect(childRecords.find(record => record.type === 'approval/policy')?.data).toMatchObject({
-          policy: 'never',
-          source: 'delegation',
-        })
-        const childPrompt = JSON.stringify(childRecords.find(record => record.type === 'user/message')?.data)
-        expect(childPrompt).toContain('Report concrete risks that the root agent can act on.')
-        expect(childPrompt).toContain('arguments=[redacted]')
-        expect(childPrompt).toContain('read success: 1 non-empty lines, 16 text characters')
-        expect(childPrompt).not.toContain('ROOT_TOOL_SECRET')
-        const structuredCall = childRecords.find(record => record.type === 'tool/call')
-        expect(structuredCall?.data).toMatchObject({ name: 'structured_output' })
-        expect(JSON.stringify(structuredCall?.data)).toContain('SHADOW_ACTIONABLE_FINDING')
+        const childByLabel = new Map<string, { log: PersistedLog; records: JsonObject[] }>()
+        for (const child of children) {
+          expect(child.header).toMatchObject({ parentSession: parent.header.id, delegationDepth: 1 })
+          const records = parseJsonl(child.content)
+          expect(records.find(record => record.type === 'approval/policy')?.data).toMatchObject({
+            policy: 'never',
+            source: 'delegation',
+          })
+          const descriptor = records.find(record => record.type === 'subagent/descriptor')?.data as JsonObject | undefined
+          if (typeof descriptor?.label !== 'string') throw new Error('Shadow child has no descriptor label')
+          childByLabel.set(descriptor.label, { log: child, records })
+        }
+        expect([...childByLabel.keys()].sort()).toEqual([
+          'shadow:challenger',
+          'shadow:confirmer',
+          'shadow:probe-planner',
+          'shadow:synthesizer',
+        ])
+
+        const planner = childByLabel.get('shadow:probe-planner')
+        const challenger = childByLabel.get('shadow:challenger')
+        const confirmer = childByLabel.get('shadow:confirmer')
+        const synthesizer = childByLabel.get('shadow:synthesizer')
+        if (planner === undefined || challenger === undefined || confirmer === undefined || synthesizer === undefined) {
+          throw new Error('missing labeled Shadow child')
+        }
+        const plannerText = JSON.stringify(planner.records)
+        expect(plannerText).toContain('Misleading success (`misleading_success`)')
+        expect(plannerText).toContain('Before using tools, write a numbered plan')
+        expect(plannerText).toContain('[seq=15 tool call] read arguments=[redacted]')
+        expect(plannerText).toContain('[seq=16 tool result] read success: 1 non-empty lines, 16 text characters')
+        expect(plannerText).toContain('PLAN_ANCHORED_SEQS_15_16')
+        expect(plannerText).toContain('Planning is complete. Now investigate with the available tools')
+        expect(plannerText).not.toContain('ROOT_TOOL_SECRET')
+        expect(planner.records.some((record) => {
+          if (record.type !== 'user/message') return false
+          const source = (record.data as JsonObject | undefined)?.source as JsonObject | undefined
+          return source?.plugin === '@deepseek-ai/dsh-system-prompt'
+        })).toBe(false)
+        expect(planner.records.filter(record => record.type === 'request/header')).toHaveLength(2)
+        expect(JSON.stringify(challenger.records)).toContain('SHADOW_CHALLENGE_FINDING')
+        expect(JSON.stringify(confirmer.records)).toContain('SHADOW_CONFIRM_FINDING')
+        expect(challenger.records.filter(record => record.type === 'request/header')).toHaveLength(2)
+        expect(confirmer.records.filter(record => record.type === 'request/header')).toHaveLength(2)
+        const synthesisText = JSON.stringify(synthesizer.records)
+        expect(synthesisText).toContain('Synthesize the conflicting Shadow reports below from their text only')
+        expect(synthesisText).toContain('SHADOW_CHALLENGE_FINDING')
+        expect(synthesisText).toContain('SHADOW_CONFIRM_FINDING')
+        expect(synthesisText).toContain('SYNTHESIZED_FINDING')
 
         const relay = parentRecords.find((record) => {
           if (record.type !== 'user/message') return false
@@ -1035,17 +1124,37 @@ describe('headless stream-json snapshots', () => {
         const relayData = relay?.data as JsonObject | undefined
         const relaySource = relayData?.source as JsonObject | undefined
         expect(relaySource).toMatchObject({ kind: 'shadow-report', form: 'relay' })
-        expect(JSON.stringify(relaySource)).toContain('reviewer')
-        expect(JSON.stringify(relayData?.content)).toContain('SHADOW_ACTIONABLE_FINDING')
+        const reports = relaySource?.reports
+        if (!Array.isArray(reports)) throw new Error('Shadow relay has no report list')
+        expect(reports).toHaveLength(2)
+        const synthesized = reports[0] as JsonObject | undefined
+        const plannerReport = reports[1] as JsonObject | undefined
+        expect(synthesized).toMatchObject({
+          shadowId: 'synthesizer', verdict: 'challenge', severity: 0.7, refs: [15, 16],
+        })
+        const replaces = synthesized?.replacesRunIds
+        expect(Array.isArray(replaces) && replaces.length === 2
+          && replaces.every(runId => typeof runId === 'string')).toBe(true)
+        expect(plannerReport).toMatchObject({
+          shadowId: 'probe-planner', verdict: 'uncertain', severity: 0.2, refs: [15, 16],
+        })
+        expect(JSON.stringify(relayData?.content)).toContain('SYNTHESIZED_FINDING')
+        expect(JSON.stringify(relayData?.content)).toContain('PROBE_LIBRARY_FINDING')
+        expect(JSON.stringify(relayData?.content)).not.toContain('SHADOW_CHALLENGE_FINDING')
+        expect(JSON.stringify(relayData?.content)).not.toContain('SHADOW_CONFIRM_FINDING')
         const rootFollowup = parentRecords.find(record => record.type === 'assistant/message'
           && JSON.stringify(record.data).includes('ROOT_USED_SHADOW_REPORT'))
         expect(rootFollowup).toBeDefined()
         expect(Number(relay?.seq)).toBeLessThan(Number(rootFollowup?.seq))
 
-        const context = contextFromLogs([parent.content, child.content])
-        const normalizedChild = normalizeSessionSnapshot(child.content, context)
-        if (refreshing) await writeFile(childExpected, normalizedChild)
-        await expect(normalizedChild).toMatchFileSnapshot(childExpected)
+        const context = contextFromLogs([parent.content, ...children.map(child => child.content)])
+        for (const [label, child] of childByLabel) {
+          const expected = childExpectedByLabel.get(label)
+          if (expected === undefined) throw new Error(`missing expected fixture for ${label}`)
+          const normalizedChild = normalizeSessionSnapshot(child.log.content, context)
+          if (refreshing) await writeFile(expected, normalizedChild)
+          await expect(normalizedChild).toMatchFileSnapshot(expected)
+        }
       },
     })
 

@@ -202,6 +202,8 @@ describe('dsh-subagent-fork-in-process', () => {
       toolFilter: true,
       persona: true,
       modelSelection: true,
+      contextInheritance: true,
+      thinkFirst: true,
     })
   })
 

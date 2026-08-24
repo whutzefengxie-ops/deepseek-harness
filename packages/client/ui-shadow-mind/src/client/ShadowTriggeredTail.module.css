@@ -1,0 +1,22 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+  color: var(--dsw-alias-label-tertiary, #6b7280);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #7c3aed;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #7c3aed 14%, transparent);
+}
+
+.count::before {
+  content: '·';
+  margin-right: 7px;
+}

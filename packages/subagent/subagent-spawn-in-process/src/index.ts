@@ -45,6 +45,8 @@ class SpawnInProcessProvider implements SubagentProvider {
     toolFilter: true,
     persona: true,
     modelSelection: true,
+    contextInheritance: true,
+    thinkFirst: true,
   }
   // Context contract: a spawned child starts fresh — it never sees the parent conversation.
   readonly inheritsParentContext = false

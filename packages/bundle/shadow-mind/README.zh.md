@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-概率式 Shadow Mind 编排的可安装 profile patch。其 manifest 声明 `dsh.bundle.patch`，而 `cordis.patch.yml` 先插入 `@deepseek-ai/dsh-shadow-mind-runtime`，再插入 `@deepseek-ai/dsh-tool-shadow-mind`。
+概率式 Shadow Mind 编排的可安装 profile patch。其 manifest 声明 `dsh.bundle.patch`，而 `cordis.patch.yml` 依次插入 `@deepseek-ai/dsh-shadow-mind-runtime`、`@deepseek-ai/dsh-tool-shadow-mind` 和 `@deepseek-ai/dsh-client-ui-shadow-mind`。
 
 ## 安装
 
@@ -12,9 +12,11 @@
 dsh plugin --profile <profile> add @deepseek-ai/dsh-shadow-mind
 ```
 
-也可以用 `pnpm pack` 生成的本地 tarball 代替包名。Profile 会记录组合包依赖，并把它追加到 `dsh.profile.bundles`；`dsh --profile <profile> --dump-config` 会显示两条插入记录。Profile 必须已经提供 agent、settings、`spawn` subagent 提供方、command、tool 与 approval，标准 base profile 均满足这些要求。
+也可以用 `pnpm pack` 生成的本地 tarball 代替包名。Profile 会记录组合包依赖，并把它追加到 `dsh.profile.bundles`；`dsh --profile <profile> --dump-config` 会显示三条插入记录。Profile 必须已经提供 agent、settings、`spawn` subagent 提供方、command、tool 与 approval，标准 base profile 均满足这些要求。
 
-可以在 `$DSH_HOME/shadow-minds/` 下创建定义，也可以使用需要批准的管理工具。[运行时 README](../../shadow-mind/shadow-mind-runtime/README.zh.md)负责调度、隐私、取消与配置语义；[工具 README](../../shadow-mind/tool-shadow-mind/README.zh.md)负责管理与批准行为。
+可以在 `$DSH_HOME/shadow-minds/` 下创建定义，也可以使用需要批准的管理工具或 Web 管理界面。[运行时 README](../../shadow-mind/shadow-mind-runtime/README.zh.md)负责调度、运行条件、预算、holdout 脱敏、综合、取消与配置语义；[工具 README](../../shadow-mind/tool-shadow-mind/README.zh.md)负责模型管理与批准行为；[浏览器 README](../../client/ui-shadow-mind/README.zh.md)负责受信任的用户管理与会话展示。
+
+在 Web profile 中，可以在**设置 → 插件 → Shadow Mind**配置全局调度、Shadow Agents 和当前会话的暂停状态。同级的**插件列表**标签会显示运行时、工具和浏览器配置项是否启用及已挂载。
 
 ## 模型体验
 
@@ -36,4 +38,4 @@ dsh plugin --profile <profile> add @deepseek-ai/dsh-shadow-mind
 
 - 组合包假定目标 profile 已提供所有注入服务和名为 `spawn` 的提供方；它不会组装独立 agent profile。
 - Patch 会把面向模型的管理工具与运行时一起挂载。需要自动审查但不允许模型编辑定义的部署，应通过自己的 profile patch 只挂载运行时记录。
-- 组合包不提供专用 Web 客户端、键盘快捷键、状态面板或 `shadow-report` renderer。
+- 浏览器管理页面没有 `Alt+S` 快捷键。其专属报告卡片在无法安全读取已持久化 relay 内容时，会回退到通用上下文行。

@@ -6,7 +6,7 @@ import type {
   SlotHookFactory, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  CommandNode, CompactionSummaryNode, ConversationSnapshot, ConversationTurnDataMap,
+  CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationSnapshot, ConversationTurnDataMap,
   ObservableSnapshot, PendingInteraction, PendingWait, SessionId, ToolCallBlock,
   TurnLocation, WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -120,6 +120,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       hookContext: string
       inject: ChatNodeTurnDataInjected
     }
+    /** Optional source-kind keyed replacement for one durable context row. */
+    'conversation.chat.contextview': { kind: 'keyed'; scope: 'session'; owner: ContextRowOwnerProps }
     /** Optional renderer for one consecutive group of durable message images. */
     'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
     /**
@@ -429,6 +431,17 @@ export interface ChatNodeOwnerProps {
 /** Full props of one registered keyed Chat business renderer. */
 export type ChatNodeViewProps<Kind extends ChatNodeKind = ChatNodeKind> =
   PropsRuntime<'conversation.chat.node', Kind> & PropsLocale<'conversation'>
+
+/** Owner currency for a source-specific durable context presentation. */
+export interface ContextRowOwnerProps {
+  /** Generic context payload projected from the Session log. */
+  node: ContextMessageNode
+  /** Generic disclosure retained when the specialized renderer cannot read the payload. */
+  fallback: ReactNode
+}
+
+/** Full props of one source-specific context-row component. */
+export type ContextRowProps = PropsRuntime<'conversation.chat.contextview'>
 
 /** Owner currency of the details panel's Tool output renderer. */
 export interface DetailsToolOwnerProps {

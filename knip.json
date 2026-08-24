@@ -519,6 +519,11 @@
         "zod"
       ]
     },
+    "packages/shadow-mind/shadow-mind-runtime": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/examples/jsonrpc-demo": {
       "project": [
         "src/**/*.ts"
@@ -659,6 +664,11 @@
     "packages/bundle/headless": {
       "ignoreDependencies": [
         "@deepseek-ai/dsh-code-runtime-worker-thread"
+      ]
+    },
+    "packages/bundle/shadow-mind": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-shadow-mind"
       ]
     },
     "packages/bundle/web-app": {

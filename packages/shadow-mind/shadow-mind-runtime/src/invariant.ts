@@ -28,6 +28,28 @@ function validate(event: SessionEvent, fail: InvariantFailure): void {
       || report.capturedThroughSeq >= event.seq) {
       fail(`shadow-report capturedThroughSeq must precede message seq ${String(event.seq)}`)
     }
+    if (report.verdict !== 'challenge' && report.verdict !== 'gap'
+      && report.verdict !== 'confirm' && report.verdict !== 'uncertain') {
+      fail('shadow-report provenance requires a known verdict')
+    }
+    if (report.severity !== undefined
+      && (!Number.isFinite(report.severity) || report.severity < 0 || report.severity > 1)) {
+      fail('shadow-report severity must be a finite number from zero through one')
+    }
+    let previous = -1
+    for (const ref of report.refs ?? []) {
+      if (!Number.isSafeInteger(ref) || ref <= 0 || ref <= previous || ref >= event.seq) {
+        fail('shadow-report refs must be ascending unique positive sequence numbers before the relay')
+      }
+      previous = ref
+    }
+    if (report.replacesRunIds !== undefined) {
+      if (report.replacesRunIds.length !== 2
+        || report.replacesRunIds.some(id => id.length === 0 || id === report.runId)
+        || new Set(report.replacesRunIds).size !== report.replacesRunIds.length) {
+        fail('shadow-report synthesis provenance must replace two distinct original run ids')
+      }
+    }
   }
 }
 

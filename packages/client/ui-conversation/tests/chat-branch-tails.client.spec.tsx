@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ComponentProps, ReactNode } from 'react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -43,6 +44,8 @@ afterEach(() => {
 // Mirrors the real lookup chain (conversation namespace, then common).
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
+const renderContextSlot = ((_key: string, _owner: object, options?: { fallback?: ReactNode }) =>
+  options?.fallback ?? null) as unknown as ComponentProps<typeof ContextMessageNodeView>['renderSlot']
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
 
 interface MessageItemProps {
@@ -74,7 +77,14 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
     case 'steering':
       return <UserMessageNodeView {...props as ChatNodeViewProps<'user' | 'steering'>} />
     case 'context':
-      return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
+      return (
+        <ContextMessageNodeView
+          {...{
+            ...props as ChatNodeViewProps<'context'>,
+            renderSlot: renderContextSlot,
+          } as unknown as ComponentProps<typeof ContextMessageNodeView>}
+        />
+      )
     case 'compaction':
       return <CompactionNodeView {...props as ChatNodeViewProps<'compaction'>} />
     case 'model-retry':

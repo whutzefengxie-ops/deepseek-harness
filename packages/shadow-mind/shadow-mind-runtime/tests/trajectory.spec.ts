@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { CallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { buildShadowPrompt, projectTrajectory, summarizeToolResult } from '@deepseek-ai/dsh-shadow-mind-runtime'
+import {
+  buildShadowPrompt,
+  projectTrajectory,
+  projectTrajectoryWithAnchors,
+  summarizeToolResult,
+} from '@deepseek-ai/dsh-shadow-mind-runtime'
 import type { ShadowDefinition } from '@deepseek-ai/dsh-shadow-mind-runtime'
 
 const SURFACE = { surfaceOp: 'append' as const }
@@ -11,6 +16,9 @@ function definition(): ShadowDefinition {
   return {
     id: 'audit', name: 'Audit', enabled: true, debug: false,
     activationProbability: 1, activeForModels: [], tools: [],
+    capture: 'full', context: 'standard', thinkFirst: false,
+    preFilters: [], boostFilters: [], boostFactor: 1,
+    holdout: false,
     prompt: 'Find risks.', sourcePath: '/defs/audit.md',
   }
 }
@@ -67,7 +75,7 @@ describe('trajectory projection', () => {
     const call = session.events.find(event => event.type === 'tool/call')!
     const projected = projectTrajectory(session.events, call.seq, 'full')
     expect(projected).toContain('{"secret":"ARGUMENT"}')
-    expect(projected).not.toContain('[tool result]')
+    expect(projected).not.toContain('tool result]')
   })
 
   it('includes durable compaction summaries without reasoning blocks', () => {
@@ -85,8 +93,36 @@ describe('trajectory projection', () => {
       model: 'compact-model',
     })
     const projected = projectTrajectory(session.events, session.events.at(-1)!.seq, 'redacted')
-    expect(projected).toContain('[compaction summary]\nCOMPACTED DECISIONS')
+    expect(projected).toMatch(/\[seq=\d+ compaction summary\]\nCOMPACTED DECISIONS/u)
     expect(projected).not.toContain('COMPACTION SECRET')
+  })
+
+  it('projects only the current successful compaction epoch while retaining summaries and exact anchors', () => {
+    const session = trajectorySession()
+    const compactionId = CompactionId('compact-epoch')
+    session.append('compaction/start', { compactionId, turn: null })
+    const summary = session.append('compaction/summary', {
+      compactionId,
+      summary: [{ type: 'text', text: 'EARLIER WORK SUMMARY' }],
+      shadowedRange: { start: 1, end: 2 },
+      shadowedSeqs: [1, 2],
+      shadowedTokenCount: 20,
+      provider: 'mock',
+      model: 'compact-model',
+    })
+    session.append('compaction/end', { compactionId, turn: null })
+    const current = session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Current epoch task.' }], source: { kind: 'user' },
+    }), SURFACE)
+    const watermark = session.events.at(-1)!.seq
+    const full = projectTrajectory(session.events, watermark, 'redacted', 'full')
+    const projected = projectTrajectoryWithAnchors(session.events, watermark, 'redacted', 'since-compaction')
+
+    expect(full).toContain('Review this.')
+    expect(projected.text).not.toContain('Review this.')
+    expect(projected.text).toContain('EARLIER WORK SUMMARY')
+    expect(projected.text).toContain('Current epoch task.')
+    expect([...projected.seqs]).toEqual([summary.seq, current.seq])
   })
 
   it('summarizes known and unknown tools without previews', () => {
@@ -170,7 +206,7 @@ describe('trajectory projection', () => {
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
 
     const projected = projectTrajectory(session.events, session.events.at(-1)!.seq, 'redacted')
-    expect(projected).toContain('[user:user]\n[image omitted]')
+    expect(projected).toContain('[seq=0 user:user]\n[image omitted]')
     expect(projected).not.toContain('hidden only')
     expect(projected).toContain('unknown-tool error')
     expect(projected).toContain('glob error')

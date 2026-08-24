@@ -1640,6 +1640,35 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Current valid definitions and isolated file diagnostics.',
       },
       {
+        signature: '@Remote(\'catalog\') async remoteExportCatalog(): Promise<ShadowAdministrationSnapshot>',
+        description: 'Load definitions and their storage directory for the trusted Web administration page.',
+        parameters: [],
+        returns: 'Current catalog and definition directory.',
+      },
+      {
+        signature: '@Remote(\'create\') remoteExportCreate(input: ShadowDefinitionInput): Promise<ShadowDefinition>',
+        description: 'Create one complete definition submitted by the Web administration page.',
+        parameters: [{ name: 'input', description: 'Validated wire fields.' }],
+        returns: 'Persisted definition.',
+      },
+      {
+        signature: '@Remote(\'update\') remoteExportUpdate(input: ShadowDefinitionInput): Promise<ShadowDefinition>',
+        description: 'Replace every editable field of one definition from the Web administration page.',
+        parameters: [{ name: 'input', description: 'Complete wire fields including the existing id.' }],
+        returns: 'Persisted definition.',
+      },
+      {
+        signature: '@Remote(\'setEnabled\') remoteExportSetEnabled(id: string, enabled: boolean): Promise<ShadowDefinition>',
+        description: 'Enable or disable one definition from the Web administration page.',
+        parameters: [{ name: 'id', description: 'Definition id.' }, { name: 'enabled', description: 'Next scheduling state.' }],
+        returns: 'Persisted definition.',
+      },
+      {
+        signature: '@Remote(\'delete\') remoteExportDelete(id: string): Promise<void>',
+        description: 'Delete one definition from the Web administration page while preserving its debug log.',
+        parameters: [{ name: 'id', description: 'Definition id.' }],
+      },
+      {
         signature: 'createDefinition(input: CreateShadowDefinition): Promise<ShadowDefinition>',
         description: 'Create a definition atomically.',
         parameters: [{ name: 'input', description: 'Complete definition fields.' }],
@@ -1674,25 +1703,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'patch', description: 'Settings fields to replace.' }],
       },
       {
-        signature: 'status(agent: Agent): ShadowMindStatus',
+        signature: '@Remote(\'status\') status(agent: Agent): ShadowMindStatus',
         description: 'Return per-root orchestration status without creating state for an untouched root.',
         parameters: [{ name: 'agent', description: 'Root agent to inspect.' }],
         returns: 'Current scheduling and run status.',
       },
       {
-        signature: 'pause(agent: Agent): ShadowMindStatus',
+        signature: '@Remote(\'pause\') pause(agent: Agent): ShadowMindStatus',
         description: 'Pause scheduling for a root and cancel its admitted work.',
         parameters: [{ name: 'agent', description: 'Root agent to pause.' }],
         returns: 'Status after the transition.',
       },
       {
-        signature: 'resume(agent: Agent): ShadowMindStatus',
+        signature: '@Remote(\'resume\') resume(agent: Agent): ShadowMindStatus',
         description: 'Resume future scheduling for a root.',
         parameters: [{ name: 'agent', description: 'Root agent to resume.' }],
         returns: 'Status after the transition.',
       },
       {
-        signature: 'toggle(agent: Agent): ShadowMindStatus',
+        signature: '@Remote(\'toggle\') toggle(agent: Agent): ShadowMindStatus',
         description: 'Toggle automatic scheduling for a root.',
         parameters: [{ name: 'agent', description: 'Root agent to update.' }],
         returns: 'Status after the transition.',
@@ -3279,7 +3308,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateShadowDefinition',
-    declaration: 'export type CreateShadowDefinition = Omit<ShadowDefinition, \'sourcePath\'>;',
+    declaration: 'export type CreateShadowDefinition = Omit<ShadowDefinition, \'sourcePath\' | \'capture\' | \'context\' | \'thinkFirst\' | \'preFilters\' | \'boostFilters\' | \'boostFactor\' | \'holdout\'> & Partial<Pick<ShadowDefinition, \'capture\' | \'context\' | \'thinkFirst\' | \'preFilters\' | \'boostFilters\' | \'boostFactor\' | \'holdout\'>>;',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -3676,6 +3705,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n}',
+  },
+  {
+    name: 'LastShadowRunStatus',
+    declaration: 'export interface LastShadowRunStatus {\n    readonly shadowId: string;\n    readonly childSessionId?: SessionId;\n    readonly capturedThroughSeq: number;\n    readonly finishedAt: string;\n    readonly outcome: ShadowRunOutcome;\n    readonly deliberationChars: number;\n    readonly verdict?: ShadowVerdict;\n    readonly independence: ShadowIndependence;\n    readonly route?: string;\n}',
   },
   {
     name: 'LlmAdapter',
@@ -4426,28 +4459,64 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SettingsUpdateSource = \'update\' | \'provider\';',
   },
   {
+    name: 'ShadowAdministrationSnapshot',
+    declaration: 'export interface ShadowAdministrationSnapshot extends ShadowCatalog {\n    readonly definitionRoot: string;\n}',
+  },
+  {
     name: 'ShadowCatalog',
     declaration: 'export interface ShadowCatalog {\n    readonly definitions: readonly ShadowDefinition[];\n    readonly diagnostics: readonly ShadowDiagnostic[];\n}',
   },
   {
+    name: 'ShadowCooldownStatus',
+    declaration: 'export interface ShadowCooldownStatus {\n    readonly shadowId: string;\n    readonly until: string;\n    readonly patterns: readonly (\'spinning\' | \'oscillation\' | \'no-drift\' | \'diminishing\')[];\n}',
+  },
+  {
     name: 'ShadowDefinition',
-    declaration: 'export interface ShadowDefinition {\n    readonly id: string;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly debug: boolean;\n    readonly activationProbability: number;\n    readonly activeForModels: readonly string[];\n    readonly runWithModel?: string;\n    readonly reasoningEffort?: string;\n    readonly timeoutSeconds?: number;\n    readonly tools: readonly string[];\n    readonly prompt: string;\n    readonly sourcePath: string;\n}',
+    declaration: 'export interface ShadowDefinition {\n    readonly id: string;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly debug: boolean;\n    readonly activationProbability: number;\n    readonly activeForModels: readonly string[];\n    readonly runWithModel?: string;\n    readonly reasoningEffort?: string;\n    readonly timeoutSeconds?: number;\n    readonly tools: readonly string[];\n    readonly capture: \'full\' | \'since-compaction\';\n    readonly context: \'standard\' | \'minimal\';\n    readonly thinkFirst: boolean;\n    readonly preFilters: readonly string[];\n    readonly boostFilters: readonly string[];\n    readonly boostFactor: number;\n    readonly holdout: boolean;\n    readonly prompt: string;\n    readonly sourcePath: string;\n}',
+  },
+  {
+    name: 'ShadowDefinitionInput',
+    declaration: 'export interface ShadowDefinitionInput {\n    readonly id: string;\n    readonly name: string;\n    readonly enabled: boolean;\n    readonly debug: boolean;\n    readonly activationProbability: number;\n    readonly activeForModels: readonly string[];\n    readonly runWithModel: string | null;\n    readonly reasoningEffort: string | null;\n    readonly timeoutSeconds: number | null;\n    readonly tools: readonly string[];\n    readonly capture: \'full\' | \'since-compaction\';\n    readonly context: \'standard\' | \'minimal\';\n    readonly thinkFirst: boolean;\n    readonly preFilters: readonly string[];\n    readonly boostFilters: readonly string[];\n    readonly boostFactor: number;\n    readonly holdout: boolean;\n    readonly prompt: string;\n}',
   },
   {
     name: 'ShadowDiagnostic',
     declaration: 'export interface ShadowDiagnostic {\n    readonly path: string;\n    readonly error: string;\n}',
   },
   {
+    name: 'ShadowEffectiveProbability',
+    declaration: 'export interface ShadowEffectiveProbability {\n    readonly shadowId: string;\n    readonly probability: number;\n}',
+  },
+  {
+    name: 'ShadowIndependence',
+    declaration: 'export type ShadowIndependence = \'independent\' | \'unverified\' | \'unavailable\' | \'same_vendor\';',
+  },
+  {
     name: 'ShadowMindSettings',
-    declaration: 'export interface ShadowMindSettings {\n    readonly heartbeatProbability: number;\n    readonly maxParallelShadows: number;\n    readonly defaultShadowTimeoutSeconds: number;\n    readonly headlessDrainTimeoutSeconds: number;\n    readonly resultBatchWindowMs: number;\n    readonly defaultShadowModel?: string;\n    readonly defaultReasoningEffort?: string;\n    readonly argumentDisclosure: \'redacted\' | \'full\';\n    readonly randomSeed?: number;\n    readonly maxPromptChars: number;\n    readonly maxReportChars: number;\n}',
+    declaration: 'export interface ShadowMindSettings {\n    readonly heartbeatProbability: number;\n    readonly maxParallelShadows: number;\n    readonly defaultShadowTimeoutSeconds: number;\n    readonly headlessDrainTimeoutSeconds: number;\n    readonly resultBatchWindowMs: number;\n    readonly defaultShadowModel?: string;\n    readonly defaultReasoningEffort?: string;\n    readonly argumentDisclosure: \'redacted\' | \'full\';\n    readonly randomSeed?: number;\n    readonly maxPromptChars: number;\n    readonly maxReportChars: number;\n    readonly preferIndependentVendor: boolean;\n    readonly longOutputBoostChars: number;\n    readonly lastReportCoversCount: number;\n    readonly repeatedFailureBoostThreshold: number;\n    readonly valueLoopEnabled: boolean;\n    readonly valueLoopWindowTurns: number;\n    readonly reviewWindowSize: number;\n    readonly spinningRepeatCount: number;\n    readonly oscillationPeriods: number;\n    readonly noDriftRepeatCount: number;\n    readonly diminishingWindowSize: number;\n    readonly diminishingNoveltyThreshold: number;\n    readonly stagnationCooldownSeconds: number;\n    readonly stagnationEscalationEnabled: boolean;\n    readonly reasoningEffortLadder: readonly string[];\n    readonly sessionShadowSoftBudgetChars?: number;\n    readonly sessionShadowHardBudgetChars?: number;\n    readonly frugalShadowModel?: string;\n    readonly staleReportDecay: number;\n    readonly conflictSynthesisEnabled: boolean;\n    readonly conflictSynthesisTimeoutSeconds: number;\n}',
   },
   {
     name: 'ShadowMindStatus',
-    declaration: 'export interface ShadowMindStatus {\n    readonly paused: boolean;\n    readonly active: readonly ActiveShadowStatus[];\n    readonly pendingSchedules: number;\n    readonly epoch: number;\n}',
+    declaration: 'export interface ShadowMindStatus {\n    readonly paused: boolean;\n    readonly active: readonly ActiveShadowStatus[];\n    readonly pendingSchedules: number;\n    readonly epoch: number;\n    readonly totalRuns: number;\n    readonly lastRun?: LastShadowRunStatus;\n    readonly prefilterSkips: number;\n    readonly effectiveProbabilities: readonly ShadowEffectiveProbability[];\n    readonly valueLoop: readonly ShadowValueLoopStatus[];\n    readonly spentChars: number;\n    readonly budgetTier: \'standard\' | \'frugal\' | \'exhausted\';\n    readonly cooldowns: readonly ShadowCooldownStatus[];\n    readonly pendingEscalations: readonly string[];\n    readonly recentReviews: readonly ShadowReviewStatus[];\n    readonly synthesisRuns: number;\n    readonly synthesisFailures: number;\n    readonly lastSynthesisFailure?: string;\n}',
   },
   {
     name: 'ShadowRegistry',
-    declaration: 'export class ShadowRegistry {\n    readonly root: string;\n    readonly logRoot: string;\n    constructor(dshHome: string);\n    async list(): Promise<ShadowCatalog>;\n    async create(input: CreateShadowDefinition): Promise<ShadowDefinition>;\n    async update(id: string, patch: UpdateShadowDefinition): Promise<ShadowDefinition>;\n    setEnabled(id: string, enabled: boolean): Promise<ShadowDefinition>;\n    async delete(id: string): Promise<void>;\n    async appendDebug(id: string, record: Record<string, unknown>): Promise<void>;\n}',
+    declaration: 'export class ShadowRegistry {\n    readonly root: string;\n    readonly logRoot: string;\n    readonly valueLoopPath: string;\n    readonly holdoutKeysPath: string;\n    constructor(dshHome: string);\n    async appendValueLoop(record: Record<string, unknown>): Promise<void>;\n    async holdoutKeys(id: string): Promise<readonly string[]>;\n    async list(): Promise<ShadowCatalog>;\n    async create(input: CreateShadowDefinition): Promise<ShadowDefinition>;\n    async update(id: string, patch: UpdateShadowDefinition): Promise<ShadowDefinition>;\n    setEnabled(id: string, enabled: boolean): Promise<ShadowDefinition>;\n    async delete(id: string): Promise<void>;\n    async appendDebug(id: string, record: Record<string, unknown>): Promise<void>;\n}',
+  },
+  {
+    name: 'ShadowReviewStatus',
+    declaration: 'export interface ShadowReviewStatus {\n    readonly shadowId: string;\n    readonly runId: string;\n    readonly verdict: ShadowVerdict;\n    readonly refs: readonly number[];\n    readonly capturedThroughSeq: number;\n    readonly finishedAt: string;\n}',
+  },
+  {
+    name: 'ShadowRunOutcome',
+    declaration: 'export type ShadowRunOutcome = \'report\' | \'silent\' | \'not_relevant\' | \'discarded\' | \'failed\';',
+  },
+  {
+    name: 'ShadowValueLoopStatus',
+    declaration: 'export interface ShadowValueLoopStatus {\n    readonly shadowId: string;\n    readonly challenges: number;\n    readonly adopted: number;\n    readonly rejected: number;\n    readonly ignored: number;\n    readonly hitRate?: number;\n}',
+  },
+  {
+    name: 'ShadowVerdict',
+    declaration: 'export type ShadowVerdict = \'challenge\' | \'gap\' | \'confirm\' | \'uncertain\';',
   },
   {
     name: 'ShellExecRequest',
@@ -4571,7 +4640,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n    readonly modelSelection?: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n    readonly modelSelection?: boolean;\n    readonly contextInheritance?: boolean;\n    readonly thinkFirst?: boolean;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
@@ -4627,7 +4696,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly modelSelection?: ModelSelection;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly modelSelection?: ModelSelection;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n    readonly contextInheritance?: \'standard\' | \'none\';\n    readonly thinkFirst?: boolean;\n}',
   },
   {
     name: 'SubagentStopReason',

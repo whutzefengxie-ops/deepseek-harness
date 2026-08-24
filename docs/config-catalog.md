@@ -2014,10 +2014,52 @@ export interface ShadowMindSettings {
   readonly maxPromptChars: number
   /** Maximum accepted report size. */
   readonly maxReportChars: number
+  /** Prefer positively independent reviewer vendors without collapsing the candidate jury. */
+  readonly preferIndependentVendor: boolean
+  /** Durable tool-result character count that activates the `long-output` boost predicate. */
+  readonly longOutputBoostChars: number
+  /** Consecutive identical report envelopes required by `last-report-covers`. */
+  readonly lastReportCoversCount: number
+  /** Same-tool failures in one turn required by `repeated-failure`. */
+  readonly repeatedFailureBoostThreshold: number
+  /** Whether accepted challenges are classified against later root behavior. */
+  readonly valueLoopEnabled: boolean
+  /** Completed root turns observed before an unanswered challenge becomes ignored. */
+  readonly valueLoopWindowTurns: number
+  /** Accepted entries retained for stagnation and novelty analysis. */
+  readonly reviewWindowSize: number
+  /** Consecutive identical envelopes required for spinning detection. */
+  readonly spinningRepeatCount: number
+  /** Alternating verdict periods required for oscillation detection. */
+  readonly oscillationPeriods: number
+  /** Consecutive unchanged confirmations required for no-drift detection. */
+  readonly noDriftRepeatCount: number
+  /** Suffix length used by diminishing-novelty detection. */
+  readonly diminishingWindowSize: number
+  /** Novel envelope share below which a full suffix is diminishing. */
+  readonly diminishingNoveltyThreshold: number
+  /** Wall-clock duration applied to a detected definition. */
+  readonly stagnationCooldownSeconds: number
+  /** Whether oscillation may spend the next reasoning-effort rung instead of cooling down. */
+  readonly stagnationEscalationEnabled: boolean
+  /** Ordered adapter-owned reasoning effort ids used for one-rung escalation. */
+  readonly reasoningEffortLadder: readonly string[]
+  /** Optional character spend that activates the frugal route. */
+  readonly sessionShadowSoftBudgetChars?: number
+  /** Optional character spend that stops new Shadow runs. */
+  readonly sessionShadowHardBudgetChars?: number
+  /** Optional provider/model route used after the soft budget. */
+  readonly frugalShadowModel?: string
+  /** Multiplicative probability decay for repeated report envelopes. */
+  readonly staleReportDecay: number
+  /** Whether one conflicting challenge/confirm pair may invoke a synthesizer. */
+  readonly conflictSynthesisEnabled: boolean
+  /** Deadline for the additional conflict-synthesis run. */
+  readonly conflictSynthesisTimeoutSeconds: number
 }
 ```
 
-Source: [`packages/shadow-mind/shadow-mind-runtime/src/types.ts:76`](../packages/shadow-mind/shadow-mind-runtime/src/types.ts)
+Source: [`packages/shadow-mind/shadow-mind-runtime/src/types.ts:184`](../packages/shadow-mind/shadow-mind-runtime/src/types.ts)
 
 <a id="deepseek-aidsh-shell-env"></a>
 
@@ -3295,6 +3337,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugins` ([`packages/client/ui-settings-plugins/src/index.ts`](../packages/client/ui-settings-plugins/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-shadow-mind` ([`packages/client/ui-shadow-mind/src/index.ts`](../packages/client/ui-shadow-mind/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-sidebar` ([`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-skill` ([`packages/client/ui-skill/src/index.ts`](../packages/client/ui-skill/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-subagent` ([`packages/client/ui-subagent/src/index.ts`](../packages/client/ui-subagent/src/index.ts))

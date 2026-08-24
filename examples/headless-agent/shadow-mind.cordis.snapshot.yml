@@ -20,9 +20,12 @@
             name: '@deepseek-ai/dsh-shadow-mind-runtime'
             config:
               heartbeatProbability: 1
-              resultBatchWindowMs: 40
+              maxParallelShadows: 3
+              resultBatchWindowMs: 4000
               defaultShadowTimeoutSeconds: 5
-              headlessDrainTimeoutSeconds: 5
+              headlessDrainTimeoutSeconds: 15
+              conflictSynthesisEnabled: true
+              conflictSynthesisTimeoutSeconds: 5
 
 - id: approval
   name: '@deepseek-ai/dsh-user-approval'

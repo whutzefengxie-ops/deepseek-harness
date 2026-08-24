@@ -31,6 +31,7 @@ describe('installable Shadow Mind bundle', () => {
     expect(entries).toEqual([
       { id: 'shadow-mind-runtime', name: '@deepseek-ai/dsh-shadow-mind-runtime' },
       { id: 'tool-shadow-mind', name: '@deepseek-ai/dsh-tool-shadow-mind' },
+      { id: 'ui-shadow-mind', name: '@deepseek-ai/dsh-client-ui-shadow-mind' },
     ])
 
     const globals = globalThis as unknown as {
@@ -41,6 +42,7 @@ describe('installable Shadow Mind bundle', () => {
     globals.__dshToolShadowMind = toolShadowMind
     const runtimeModule = join(root, 'runtime.mjs')
     const toolModule = join(root, 'tool.mjs')
+    const uiModule = join(root, 'ui.mjs')
     const configPath = join(root, 'cordis.yml')
     await writeFile(runtimeModule, 'export default globalThis.__dshShadowMindRuntime\n')
     await writeFile(toolModule, [
@@ -50,11 +52,17 @@ describe('installable Shadow Mind bundle', () => {
       'export const apply = plugin.apply',
       '',
     ].join('\n'))
+    await writeFile(uiModule, [
+      'export function apply() {}',
+      '',
+    ].join('\n'))
     await writeFile(configPath, [
       '- id: shadow-mind-runtime',
       `  name: ${pathToFileURL(runtimeModule).href}`,
       '- id: tool-shadow-mind',
       `  name: ${pathToFileURL(toolModule).href}`,
+      '- id: ui-shadow-mind',
+      `  name: ${pathToFileURL(uiModule).href}`,
       '',
     ].join('\n'))
 

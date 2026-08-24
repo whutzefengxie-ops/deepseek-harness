@@ -13,10 +13,10 @@ async function setup() {
   return ctx
 }
 
-function relay(reports: unknown[]): SessionEvent<'user/message'> {
+function relay(reports: unknown[], seq = 1): SessionEvent<'user/message'> {
   return {
     type: 'user/message',
-    seq: 1,
+    seq,
     time: 0,
     data: createUserMessage({
       content: [{ type: 'text', text: 'report' }],
@@ -40,20 +40,40 @@ describe('Shadow Mind relay invariant', () => {
         runId: 'run-1',
         childSessionId: SessionId('child-1'),
         capturedThroughSeq: 0,
+        verdict: 'challenge',
+        refs: [],
       }]))
+    }).not.toThrow()
+    expect(() => {
+      ctx.emit('session/event', session, relay([{
+        shadowId: 'synthesizer',
+        runId: 'run-synthesis',
+        childSessionId: SessionId('child-synthesis'),
+        capturedThroughSeq: 2,
+        verdict: 'confirm',
+        refs: [1, 2],
+        replacesRunIds: ['run-left', 'run-right'],
+      }], 3))
     }).not.toThrow()
   })
 
   it.each([
     [[], /at least one report/],
-    [[{ shadowId: '', runId: 'run-1', childSessionId: 'child-1', capturedThroughSeq: 0 }], /ids must be non-empty/],
+    [[{ shadowId: '', runId: 'run-1', childSessionId: 'child-1', capturedThroughSeq: 0, verdict: 'challenge' }], /ids must be non-empty/],
     [[
-      { shadowId: 'a', runId: 'same', childSessionId: 'child-a', capturedThroughSeq: 0 },
-      { shadowId: 'b', runId: 'same', childSessionId: 'child-b', capturedThroughSeq: 0 },
+      { shadowId: 'a', runId: 'same', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'challenge' },
+      { shadowId: 'b', runId: 'same', childSessionId: 'child-b', capturedThroughSeq: 0, verdict: 'confirm' },
     ], /repeats run id/],
-    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: -1 }], /must precede/],
-    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 1.5 }], /must precede/],
-    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 1 }], /must precede/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: -1, verdict: 'challenge' }], /must precede/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 1.5, verdict: 'challenge' }], /must precede/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 1, verdict: 'challenge' }], /must precede/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'unknown' }], /known verdict/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'challenge', severity: 2 }], /severity/],
+    [[{ shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0, verdict: 'challenge', refs: [1] }], /refs/],
+    [[{
+      shadowId: 'a', runId: 'run-a', childSessionId: 'child-a', capturedThroughSeq: 0,
+      verdict: 'challenge', replacesRunIds: ['run-left'],
+    }], /replace two distinct/],
   ])('rejects malformed provenance %#', async (reports, message) => {
     const ctx = await setup()
     expect(() => {

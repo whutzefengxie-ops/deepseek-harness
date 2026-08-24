@@ -31,12 +31,16 @@ interface SubagentCapabilities {
   readonly persona: boolean
   /** Complete per-run model selection; absence is equivalent to `false`. */
   readonly modelSelection?: boolean
+  /** Per-run runtime-context inheritance policy; absence is equivalent to `false`. */
+  readonly contextInheritance?: boolean
+  /** Two-step tool-free planning before investigation; absence is equivalent to `false`. */
+  readonly thinkFirst?: boolean
 }
 ```
 
 ## The one-shot start request
 
-The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional output schema, depth, tool filter, and persona require matching capability flags. Unsupported schemas fail at start; in-process backends scope filters and personas to child creation and implement the supported object-rooted schema with a forced capture tool.
+The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional output schema, depth, tool filter, persona, model selection, context inheritance, and think-first execution require matching capability flags. Unsupported options fail at start; in-process backends scope filters and personas to child creation, implement the object-rooted schema with a forced capture tool, preserve enforcement when dynamic model-visible context is removed, and own the tool-free planning continuation.
 
 ```ts type-equiv
 /**
@@ -103,6 +107,18 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Runtime-context inheritance for this child. `none` removes model-visible
+   * dynamic context and pre-step additions while leaving sandbox and approval
+   * enforcement intact. Requires {@link SubagentCapabilities.contextInheritance}.
+   */
+  readonly contextInheritance?: 'standard' | 'none'
+  /**
+   * Whether the first child request must expose zero tools before one
+   * provider-owned steering step opens the configured tool directory. Requires
+   * {@link SubagentCapabilities.thinkFirst}.
+   */
+  readonly thinkFirst?: boolean
 }
 ```
 

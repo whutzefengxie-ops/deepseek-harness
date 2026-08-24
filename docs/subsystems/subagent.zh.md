@@ -31,12 +31,16 @@ interface SubagentCapabilities {
   readonly persona: boolean
   /** Complete per-run model selection; absence is equivalent to `false`. */
   readonly modelSelection?: boolean
+  /** Per-run runtime-context inheritance policy; absence is equivalent to `false`. */
+  readonly contextInheritance?: boolean
+  /** Two-step tool-free planning before investigation; absence is equivalent to `false`. */
+  readonly thinkFirst?: boolean
 }
 ```
 
 ## 单次启动请求
 
-工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 output schema、depth、工具过滤器和 persona 需要对应的能力 flag 匹配。不支持的 schema 在启动时即失败；进程内后端将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。
+工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 output schema、depth、工具过滤器、persona、模型选择、context 继承和 think-first 执行需要对应的能力 flag 匹配。不支持的选项在启动时即失败；进程内后端将 filter 和 persona 的作用域限定在子 agent 创建阶段，通过强制 capture 工具实现 object-rooted schema，在移除模型可见动态 context 时保留强制执行机制，并负责零工具规划的继续执行。
 
 ```ts type-equiv
 /**
@@ -103,6 +107,18 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Runtime-context inheritance for this child. `none` removes model-visible
+   * dynamic context and pre-step additions while leaving sandbox and approval
+   * enforcement intact. Requires {@link SubagentCapabilities.contextInheritance}.
+   */
+  readonly contextInheritance?: 'standard' | 'none'
+  /**
+   * Whether the first child request must expose zero tools before one
+   * provider-owned steering step opens the configured tool directory. Requires
+   * {@link SubagentCapabilities.thinkFirst}.
+   */
+  readonly thinkFirst?: boolean
 }
 ```
 

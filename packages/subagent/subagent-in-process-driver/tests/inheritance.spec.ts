@@ -36,22 +36,23 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true })
 })
 
-async function setupWalled(script: Script): Promise<{ ctx: Context; parent: Agent }> {
+async function setupWalled(script: Script): Promise<{ ctx: Context; parent: Agent; adapter: MockAdapter }> {
   const ctx = new Context()
   contexts.push(ctx)
+  const adapter = new MockAdapter(script)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: workspace })
   await ctx.plugin(SandboxedFileSystem, { cwd: workspace })
   await ctx.plugin(ToolFs)
   await ctx.plugin(ApprovalService)
   await ctx.plugin(AgentLoop, { agents: [] })
-  ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
+  ctx.llm.registerAdapter(['mock'], adapter)
   const parent = ctx.agentLoop.create(
     SessionId('parent'),
     { provider: 'mock', model: 'mock' },
     { cwd: workspace },
   )
-  return { ctx, parent }
+  return { ctx, parent, adapter }
 }
 
 function spawnRequest(parent: Agent) {
@@ -79,6 +80,37 @@ function toolResultTexts(agent: Agent): string[] {
 }
 
 describe('in-process policy inheritance', () => {
+  it('minimal context removes model-visible policy text without weakening enforcement', async () => {
+    const script: Script = []
+    const { parent, adapter } = await setupWalled(script)
+    const blocked = join(workspace, 'minimal-blocked.txt')
+    setSandboxMode(parent.session, 'read-only')
+    script.push(
+      toolCallResponse('write', 'write', { file_path: blocked, content: 'escaped' }),
+      textResponse('blocked as expected'),
+    )
+
+    const run = await startInProcessRun({
+      ...spawnRequest(parent),
+      contextInheritance: 'none',
+    }, {})
+    try {
+      await run.result
+      const child = run.localAgent as Agent
+      expect(JSON.stringify(adapter.requests[0]?.messages)).not.toMatch(
+        /Current DSH file policy|Approval prompts are disabled|delegated subagent/,
+      )
+      expect(child.session.events.slice(0, 2)).toMatchObject([
+        { type: 'sandbox/mode', data: { mode: 'read-only', source: 'delegation' } },
+        { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+      ])
+      expect(toolResultTexts(child).join('\n')).toContain(READ_ONLY_DENIAL)
+      await expect(readFile(blocked, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      await run.dispose()
+    }
+  })
+
   it('records the parent sandbox override and the approval pin before publishing a spawn child', async () => {
     const script: Script = []
     const { ctx, parent } = await setupWalled(script)

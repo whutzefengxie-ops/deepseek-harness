@@ -5,6 +5,7 @@
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   ModelRetryNode, TurnErrorNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -301,10 +302,15 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
   )
 })
 
-/** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+type ContextMessageNodeViewProps = ChatNodeViewProps<'context'>
+  & PropsRenderSlots<'conversation.chat.contextview'>
+
+/** Injected-context keyed Chat renderer with source-kind specialization. */
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({
+  node, renderSlot, t,
+}: ContextMessageNodeViewProps) {
   const data = node.data
-  return (
+  const fallback = (
     <ContextInjectionRow
       content={data.content}
       source={data.source}
@@ -313,6 +319,17 @@ export const ContextMessageNodeView = memo(function ContextMessageNodeView({ nod
       t={t}
     />
   )
+  const source = data.source
+  const sourceKind = typeof source === 'object'
+    && source !== null
+    && 'kind' in source
+    && typeof source.kind === 'string'
+    ? source.kind
+    : ''
+  return renderSlot('conversation.chat.contextview', { node: data, fallback }, {
+    entryKey: sourceKind,
+    fallback,
+  })
 })
 
 /** Automatic compaction keyed Chat renderer. */

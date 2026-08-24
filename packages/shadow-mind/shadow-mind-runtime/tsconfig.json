@@ -17,6 +17,7 @@
     { "path": "../../llm/llm" },
     { "path": "../../settings/settings" },
     { "path": "../../subagent/subagent" },
+    { "path": "../../typert/protocol" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../../util/atomic-write" },
     { "path": "../../util/home-paths" }

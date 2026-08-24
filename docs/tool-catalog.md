@@ -1577,6 +1577,58 @@ Create one Markdown-backed Shadow definition. This changes local configuration a
         "type": "string"
       }
     },
+    "capture": {
+      "type": "string",
+      "description": "Root trajectory window captured by the Shadow.",
+      "enum": [
+        "full",
+        "since-compaction"
+      ]
+    },
+    "context": {
+      "type": "string",
+      "description": "Whether model-visible dynamic runtime context is inherited.",
+      "enum": [
+        "standard",
+        "minimal"
+      ]
+    },
+    "think_first": {
+      "type": "boolean",
+      "description": "Require a tool-free planning request before investigation."
+    },
+    "pre_filter": {
+      "type": "array",
+      "description": "Named deterministic predicates that skip a selected run before spawn.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "last-report-covers",
+          "tool-failure",
+          "no-tool-calls"
+        ]
+      }
+    },
+    "boost_filter": {
+      "type": "array",
+      "description": "Named deterministic predicates that multiply activation probability.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "misleading-success",
+          "repeated-failure",
+          "long-output"
+        ]
+      }
+    },
+    "boost_factor": {
+      "type": "number",
+      "description": "Probability multiplier applied when any boost predicate matches."
+    },
+    "holdout": {
+      "type": "boolean",
+      "description": "Apply owner-side literal redaction using the local holdout sidecar."
+    },
     "prompt": {
       "type": "string",
       "description": "Non-empty Shadow instructions."
@@ -1756,6 +1808,58 @@ Update selected fields of one Shadow definition. This changes local configuratio
         "type": "string"
       }
     },
+    "capture": {
+      "type": "string",
+      "description": "Root trajectory window captured by the Shadow.",
+      "enum": [
+        "full",
+        "since-compaction"
+      ]
+    },
+    "context": {
+      "type": "string",
+      "description": "Whether model-visible dynamic runtime context is inherited.",
+      "enum": [
+        "standard",
+        "minimal"
+      ]
+    },
+    "think_first": {
+      "type": "boolean",
+      "description": "Require a tool-free planning request before investigation."
+    },
+    "pre_filter": {
+      "type": "array",
+      "description": "Named deterministic predicates that skip a selected run before spawn.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "last-report-covers",
+          "tool-failure",
+          "no-tool-calls"
+        ]
+      }
+    },
+    "boost_filter": {
+      "type": "array",
+      "description": "Named deterministic predicates that multiply activation probability.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "misleading-success",
+          "repeated-failure",
+          "long-output"
+        ]
+      }
+    },
+    "boost_factor": {
+      "type": "number",
+      "description": "Probability multiplier applied when any boost predicate matches."
+    },
+    "holdout": {
+      "type": "boolean",
+      "description": "Apply owner-side literal redaction using the local holdout sidecar."
+    },
     "prompt": {
       "type": "string",
       "description": "Non-empty Shadow instructions."
@@ -1824,6 +1928,93 @@ Update selected Shadow Mind scheduling settings. This changes local configuratio
     "maxReportChars": {
       "type": "number",
       "description": "Positive accepted report bound."
+    },
+    "preferIndependentVendor": {
+      "type": "boolean",
+      "description": "Prefer independently-vendored candidate routes when at least two remain."
+    },
+    "longOutputBoostChars": {
+      "type": "number",
+      "description": "Tool-result size that triggers the long-output boost."
+    },
+    "lastReportCoversCount": {
+      "type": "number",
+      "description": "Repeated envelope count for last-report suppression."
+    },
+    "repeatedFailureBoostThreshold": {
+      "type": "number",
+      "description": "Same-tool failure count that triggers a boost."
+    },
+    "valueLoopEnabled": {
+      "type": "boolean",
+      "description": "Persist metadata-only challenge dispositions."
+    },
+    "valueLoopWindowTurns": {
+      "type": "number",
+      "description": "Root turns observed before a challenge becomes ignored."
+    },
+    "reviewWindowSize": {
+      "type": "number",
+      "description": "Accepted report entries retained per definition."
+    },
+    "spinningRepeatCount": {
+      "type": "number",
+      "description": "Identical-envelope threshold for spinning."
+    },
+    "oscillationPeriods": {
+      "type": "number",
+      "description": "Alternating verdict periods required for oscillation."
+    },
+    "noDriftRepeatCount": {
+      "type": "number",
+      "description": "Unchanged confirmation threshold for no-drift."
+    },
+    "diminishingWindowSize": {
+      "type": "number",
+      "description": "Suffix length for diminishing novelty."
+    },
+    "diminishingNoveltyThreshold": {
+      "type": "number",
+      "description": "Minimum novel-envelope share from 0 through 1."
+    },
+    "stagnationCooldownSeconds": {
+      "type": "number",
+      "description": "Wall-clock stagnation cooldown."
+    },
+    "stagnationEscalationEnabled": {
+      "type": "boolean",
+      "description": "Escalate oscillating reviewers by one reasoning-effort rung."
+    },
+    "reasoningEffortLadder": {
+      "type": "array",
+      "description": "Ordered unique reasoning-effort rung names.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sessionShadowSoftBudgetChars": {
+      "type": "number",
+      "description": "Character spend that activates the frugal route."
+    },
+    "sessionShadowHardBudgetChars": {
+      "type": "number",
+      "description": "Character spend that stops new Shadow runs."
+    },
+    "frugalShadowModel": {
+      "type": "string",
+      "description": "Provider/model route used after the soft budget."
+    },
+    "staleReportDecay": {
+      "type": "number",
+      "description": "Repeated-envelope probability decay from 0 through 1."
+    },
+    "conflictSynthesisEnabled": {
+      "type": "boolean",
+      "description": "Replace one conflicting report pair with one synthesis."
+    },
+    "conflictSynthesisTimeoutSeconds": {
+      "type": "number",
+      "description": "Positive synthesis deadline."
     }
   }
 }

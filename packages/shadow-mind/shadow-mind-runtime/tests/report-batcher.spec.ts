@@ -11,6 +11,8 @@ function report(id: string) {
     childSessionId: SessionId(`child-${id}`),
     capturedThroughSeq: 4,
     content: `report-${id}`,
+    verdict: 'challenge' as const,
+    refs: [],
   }
 }
 

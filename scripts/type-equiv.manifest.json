@@ -1992,6 +1992,16 @@
     },
     {
       "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowAdministrationSnapshot",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowDefinitionInput",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
       "symbol": "CreateShadowDefinition",
       "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
     },
@@ -2013,6 +2023,26 @@
     {
       "doc": "docs/subsystems/shadow-mind.md",
       "symbol": "ActiveShadowStatus",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowRunOutcome",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowVerdict",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "ShadowIndependence",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "LastShadowRunStatus",
       "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
     },
     {

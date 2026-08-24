@@ -39,6 +39,7 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-client-ui-shadow-mind": "workspace:^",
     "@deepseek-ai/dsh-shadow-mind-runtime": "workspace:^",
     "@deepseek-ai/dsh-tool-shadow-mind": "workspace:^"
   },

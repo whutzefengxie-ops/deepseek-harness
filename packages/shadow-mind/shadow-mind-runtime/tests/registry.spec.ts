@@ -35,6 +35,13 @@ describe('parseShadowDefinition', () => {
       'reasoning_effort: low',
       'timeout_seconds: 9',
       'tools: [web_search]',
+      'capture: since-compaction',
+      'context: minimal',
+      'think_first: true',
+      'pre_filter: [tool-failure]',
+      'boost_filter: [long-output]',
+      'boost_factor: 2.5',
+      'holdout: true',
       '---',
       '',
       'Inspect the design.',
@@ -43,6 +50,9 @@ describe('parseShadowDefinition', () => {
       id: 'audit', name: 'Audit', enabled: false, debug: true,
       activationProbability: 0.75, runWithModel: 'mock/shadow',
       reasoningEffort: 'low', timeoutSeconds: 9,
+      capture: 'since-compaction', context: 'minimal', thinkFirst: true,
+      preFilters: ['tool-failure'], boostFilters: ['long-output'], boostFactor: 2.5,
+      holdout: true,
       prompt: 'Inspect the design.',
     })
     expect(definition.activeForModels).toEqual(['mock/*'])
@@ -66,6 +76,13 @@ describe('parseShadowDefinition', () => {
     ['---\nid: a\nactivation_probability: .nan\n---\nbody', 'activation_probability'],
     ['---\nid: a\ntimeout_seconds: .inf\n---\nbody', 'timeout_seconds'],
     ['---\nid: a\nrun_with_model: model-only\n---\nbody', 'provider/model'],
+    ['---\nid: a\ncapture: recent\n---\nbody', 'capture must be one of'],
+    ['---\nid: a\ncontext: inherited\n---\nbody', 'context must be one of'],
+    ['---\nid: a\nthink_first: yes\n---\nbody', 'think_first must be a boolean'],
+    ['---\nid: a\npre_filter: [unknown]\n---\nbody', 'unknown pre_filter'],
+    ['---\nid: a\nboost_filter: [unknown]\n---\nbody', 'unknown boost_filter'],
+    ['---\nid: a\nboost_factor: 0.5\n---\nbody', 'boost_factor'],
+    ['---\nid: a\nholdout: yes\n---\nbody', 'holdout must be a boolean'],
     ['---\nid: [\n---\nbody', 'invalid YAML frontmatter'],
     ['---\nid: a\n---\n   ', 'body must be non-empty'],
   ])('rejects invalid documents', (source, message) => {
@@ -79,6 +96,30 @@ describe('Shadow settings', () => {
       .toBe('provider/org/model')
     expect(() => Config({ defaultShadowModel: 'model-only' })).toThrow()
     expect(() => Config({ defaultShadowModel: 'provider/has whitespace' })).toThrow()
+  })
+
+  it('validates stagnation windows, effort ladders, and the frugal budget tier', () => {
+    expect(() => Config({ reviewWindowSize: 3, oscillationPeriods: 2 })).toThrow('reviewWindowSize')
+    expect(() => Config({ reasoningEffortLadder: ['high', 'high'] })).toThrow('unique')
+    expect(() => Config({ frugalShadowModel: 'mock/frugal' })).toThrow('sessionShadowSoftBudgetChars')
+    expect(() => Config({
+      sessionShadowSoftBudgetChars: 100,
+      sessionShadowHardBudgetChars: 1_000,
+    })).toThrow('frugalShadowModel')
+    expect(() => Config({
+      sessionShadowSoftBudgetChars: 1_000,
+      sessionShadowHardBudgetChars: 100,
+      frugalShadowModel: 'mock/frugal',
+    })).toThrow('less than')
+    expect(Config({
+      sessionShadowSoftBudgetChars: 100,
+      sessionShadowHardBudgetChars: 1_000,
+      frugalShadowModel: 'mock/frugal',
+    })).toMatchObject({
+      sessionShadowSoftBudgetChars: 100,
+      sessionShadowHardBudgetChars: 1_000,
+      frugalShadowModel: 'mock/frugal',
+    })
   })
 })
 
@@ -100,6 +141,10 @@ describe('ShadowRegistry', () => {
         prompt: 'Minimal prompt.',
       })
       expect(minimal.id).toBe('minimal')
+      expect(minimal).toMatchObject({
+        capture: 'full', context: 'standard', thinkFirst: false,
+        preFilters: [], boostFilters: [], boostFactor: 1, holdout: false,
+      })
       const minimalUpdated = await registry.update('minimal', { name: 'Minimal updated' })
       expect(minimalUpdated.name).toBe('Minimal updated')
       expect(minimalUpdated).not.toHaveProperty('runWithModel')
@@ -112,6 +157,22 @@ describe('ShadowRegistry', () => {
       expect((await registry.list()).definitions).toHaveLength(1)
       const updated = await registry.update('audit', { prompt: 'Updated.', enabled: false })
       expect(updated).toMatchObject({ prompt: 'Updated.', enabled: false })
+      const conditioned = await registry.update('audit', {
+        capture: 'since-compaction',
+        context: 'minimal',
+        thinkFirst: true,
+        preFilters: ['last-report-covers'],
+        boostFilters: ['repeated-failure'],
+        boostFactor: 3,
+      })
+      expect(conditioned).toMatchObject({
+        capture: 'since-compaction',
+        context: 'minimal',
+        thinkFirst: true,
+        preFilters: ['last-report-covers'],
+        boostFilters: ['repeated-failure'],
+        boostFactor: 3,
+      })
       await registry.setEnabled('audit', true)
       await registry.appendDebug('audit', { status: 'report' })
       await expect(registry.appendDebug('../escape', { status: 'report' })).rejects.toThrow('shadow id must match')
@@ -172,6 +233,87 @@ describe('ShadowRegistry', () => {
       expect((await registry.list()).definitions[0]).toMatchObject({ name: 'First', prompt: 'Second' })
       await writeFile(join(registry.root, 'broken.md'), 'broken')
       await expect(registry.create(input('broken'))).rejects.toThrow('path already exists')
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('appends metadata-only value-loop records across registry instances', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const first = new ShadowRegistry(home)
+      await first.appendValueLoop({ runId: 'run-1', classification: 'challenge_adopted' })
+      const restarted = new ShadowRegistry(home)
+      await restarted.appendValueLoop({ runId: 'run-2', classification: 'ignored' })
+      const records = (await readFile(restarted.valueLoopPath, 'utf8')).trim().split('\n')
+        .map(line => JSON.parse(line) as Record<string, unknown>)
+      expect(records).toEqual([
+        { runId: 'run-1', classification: 'challenge_adopted' },
+        { runId: 'run-2', classification: 'ignored' },
+      ])
+      expect(records.some(record => 'content' in record || 'report' in record || 'trajectory' in record)).toBe(false)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('requires a valid owner-only sidecar for holdout definitions without exposing its keys', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      const held = { ...input('held'), holdout: true }
+      await expect(registry.create(held)).rejects.toThrow('needs')
+
+      await mkdir(registry.root, { recursive: true })
+      await writeFile(join(registry.root, 'manual.md'), '---\nid: manual\nholdout: true\n---\nmanual prompt\n')
+      expect((await registry.list()).diagnostics[0]?.error).toContain('needs')
+
+      for (const invalid of [
+        '{',
+        '[]',
+        '{"held": []}',
+        '{"held": [""]}',
+        '{"held": ["   "]}',
+        '{"held": ["secret", "secret"]}',
+      ]) {
+        await writeFile(registry.holdoutKeysPath, invalid)
+        await expect(registry.create(held)).rejects.toThrow()
+      }
+
+      await writeFile(registry.holdoutKeysPath, JSON.stringify({
+        held: ['SCORING_COMMAND', 'EXPECTED_OUTPUT'],
+        manual: ['MANUAL_SECRET'],
+      }))
+      const created = await registry.create(held)
+      expect(created).toMatchObject({ id: 'held', holdout: true })
+      expect(created).not.toHaveProperty('holdoutKeys')
+      expect(await registry.holdoutKeys('held')).toEqual(['SCORING_COMMAND', 'EXPECTED_OUTPUT'])
+      expect(await readFile(created.sourcePath, 'utf8')).toContain('holdout: true')
+      expect((await registry.list()).definitions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'held', holdout: true }),
+        expect.objectContaining({ id: 'manual', holdout: true }),
+      ]))
+
+      const plain = await registry.create(input('plain'))
+      await expect(registry.update('plain', { holdout: true })).rejects.toThrow('needs')
+      await writeFile(registry.holdoutKeysPath, JSON.stringify({
+        held: ['SCORING_COMMAND'],
+        manual: ['MANUAL_SECRET'],
+        plain: ['PLAIN_SECRET'],
+      }))
+      await expect(registry.update(plain.id, { holdout: true }))
+        .resolves.toMatchObject({ holdout: true })
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  it('rethrows non-missing holdout sidecar read failures', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-shadow-registry-'))
+    try {
+      const registry = new ShadowRegistry(home)
+      await mkdir(registry.holdoutKeysPath, { recursive: true })
+      await expect(registry.holdoutKeys('held')).rejects.toThrow()
     } finally {
       await rm(home, { recursive: true, force: true })
     }

@@ -276,6 +276,20 @@ export function apply(ctx: Context, config: Config): void {}
     expect(entries[0]?.schemaKeys).toEqual(['knob'])
   })
 
+  it('reads keys from the base of a schema transform', () => {
+    const entries = collectConfigCatalog(make({
+      'src/index.ts': `import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
+${DOCUMENTED_CONFIG}
+const Settings = z.object({ knob: z.string() })
+export const Config: z<Config> = z.transform(Settings, value => value)
+/** Load. */
+export function apply(ctx: Context, config: Config): void {}
+`,
+    }))
+    expect(entries[0]?.schemaKeys).toEqual(['knob'])
+  })
+
   it('hard-errors on a schema key the config type does not declare', () => {
     expect(() => collectConfigCatalog(make({
       'src/index.ts': `import type { Context } from '@deepseek-ai/cordis'

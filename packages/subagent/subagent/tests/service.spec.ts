@@ -30,6 +30,8 @@ const ALL_CAPS: SubagentCapabilities = {
   toolFilter: true,
   persona: true,
   modelSelection: true,
+  contextInheritance: true,
+  thinkFirst: true,
 }
 const NO_CAPS: SubagentCapabilities = { outputSchema: false, depthLimit: false, toolFilter: false, persona: false }
 
@@ -179,6 +181,8 @@ describe('SubagentRuntime', () => {
         reasoningEffort: ReasoningEffortId('high'),
       },
     }],
+    ['contextInheritance', { contextInheritance: 'none' }],
+    ['thinkFirst', { thinkFirst: true }],
   ] as const)('rejects unsupported %s before provider startup', async (_capability, override) => {
     const { subagents } = await service()
     const provider = new StubProvider('weak', NO_CAPS)

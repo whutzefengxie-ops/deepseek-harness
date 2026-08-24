@@ -10,13 +10,13 @@ The generated [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-s
 
 `list_shadows` and `get_shadow_config` are read-only. Every create, update, enable, disable, delete, or settings write calls `ctx.approval.request()` with the exact calling agent, tool name, call id, signal, and a human-readable reason. Only `allowed-once` commits the mutation; denied, unavailable, cancelled, or broader outcomes fail without changing disk or settings. A non-agent caller cannot mutate configuration.
 
-Definition outputs are stable pretty JSON and omit source paths. A create defaults `enabled` to true, `debug` to false, `activation_probability` to `0.3`, and array fields to empty. `update_shadow` requires at least one supplied field. Delete removes the definition but preserves its runtime debug log. `update_shadow_config` requires at least one supplied setting and uses the runtime settings schema for persistence-time validation.
+Definition outputs are stable pretty JSON and omit source paths. A create defaults `enabled` to true, `debug` to false, `activation_probability` to `0.3`, `capture` to `full`, `context` to `standard`, `think_first` and `holdout` to false, `boost_factor` to `1`, and array fields to empty. The create and update schemas also expose named prefilters and boosts. Holdout literals are deliberately absent: they live only in the owner-side sidecar and no tool reads or writes them. `update_shadow` requires at least one supplied field. Delete removes the definition but preserves its runtime debug log. `update_shadow_config` requires at least one supplied setting and exposes every live scheduling, detector, value-loop, budget, decay, and synthesis field through runtime schema validation.
 
 All eight tools use generic cards. Read operations declare read presentation; mutations declare execute presentation. Registrations are Cordis effects and disappear when the plugin unloads.
 
 ## Command
 
-`/shadow status|pause|resume|toggle` controls only the current root agent. Empty input is `status`; invalid input returns usage. Pause advances the root cancellation epoch and aborts admitted Shadow work, while definitions and live global settings remain unchanged. Commands reject descendant agents through the runtime service.
+`/shadow status|pause|resume|toggle` controls only the current root agent. Empty input is `status`; invalid input returns usage. Every successful command reports active and pending work, admitted runs, prefilter skips, effective probabilities, budget spend and tier, cooldowns, pending escalations, value-loop counters, synthesis totals, recent report metadata, and the latest terminal outcome when present. Pause advances the root cancellation epoch and aborts admitted Shadow and synthesis work, while definitions and live global settings remain unchanged. Commands reject descendant agents through the runtime service.
 
 ## Failures
 

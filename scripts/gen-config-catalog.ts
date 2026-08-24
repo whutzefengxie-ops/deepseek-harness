@@ -414,7 +414,7 @@ function unwrapExpr(expr: ts.Expression): ts.Expression {
  * packages whose schemas an intersect composes. A key path is the top-level
  * key or a nested path through object/array compositions (`agents[].id`).
  * Handles the declaration forms the repo uses — `z.object({…})` (possibly behind
- * chained calls) and `z.intersect([X.Config, …])` — and hard-errors on
+ * chained calls), `z.transform(BASE, …)`, and `z.intersect([X.Config, …])` — and hard-errors on
  * anything else, so a schema the walk cannot see fails the gate instead of
  * silently thinning it. Nested values that are neither `object` nor `array`
  * compositions (primitives, unions, dynamic-key dicts) contribute no paths.
@@ -433,6 +433,10 @@ function walkSchemaExpr(
     const call = unwrapExpr(value)
     if (!ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression)) return
     const method = call.expression.name.text
+    if (method === 'transform' && call.arguments[0]) {
+      collectValuePaths(call.arguments[0], base)
+      return
+    }
     if (method === 'object' && call.arguments[0] && ts.isObjectLiteralExpression(call.arguments[0])) {
       for (const prop of call.arguments[0].properties) {
         if (!ts.isPropertyAssignment(prop)) continue
@@ -452,7 +456,7 @@ function walkSchemaExpr(
   const visit = (e: ts.Expression): void => {
     const value = unwrapExpr(e)
     if (ts.isIdentifier(value)) {
-      const referenced = findExportedConstInitializer(ctx, value.text)
+      const referenced = findConstInitializer(ctx, value.text)
       if (referenced) {
         visit(referenced)
         return
@@ -464,6 +468,10 @@ function walkSchemaExpr(
       return
     }
     const method = call.expression.name.text
+    if (method === 'transform' && call.arguments[0]) {
+      visit(call.arguments[0])
+      return
+    }
     if (method === 'object' && call.arguments[0] && ts.isObjectLiteralExpression(call.arguments[0])) {
       for (const prop of call.arguments[0].properties) {
         if (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)) {
@@ -511,6 +519,17 @@ function walkSchemaExpr(
 interface SchemaExpr {
   ctx: FileCtx
   expr: ts.Expression
+}
+
+/** Find one file-local const initializer by name. */
+function findConstInitializer(ctx: FileCtx, name: string): ts.Expression | null {
+  for (const stmt of ctx.sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.name.text === name && decl.initializer) return decl.initializer
+    }
+  }
+  return null
 }
 
 /** Find one exported const initializer by name. */

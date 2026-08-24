@@ -90,6 +90,10 @@ export interface SubagentCapabilities {
   readonly persona: boolean
   /** Complete per-run model selection; absence is equivalent to `false`. */
   readonly modelSelection?: boolean
+  /** Per-run runtime-context inheritance policy; absence is equivalent to `false`. */
+  readonly contextInheritance?: boolean
+  /** Two-step tool-free planning before investigation; absence is equivalent to `false`. */
+  readonly thinkFirst?: boolean
 }
 
 /**
@@ -156,6 +160,18 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Runtime-context inheritance for this child. `none` removes model-visible
+   * dynamic context and pre-step additions while leaving sandbox and approval
+   * enforcement intact. Requires {@link SubagentCapabilities.contextInheritance}.
+   */
+  readonly contextInheritance?: 'standard' | 'none'
+  /**
+   * Whether the first child request must expose zero tools before one
+   * provider-owned steering step opens the configured tool directory. Requires
+   * {@link SubagentCapabilities.thinkFirst}.
+   */
+  readonly thinkFirst?: boolean
 }
 
 /**
