@@ -121,6 +121,7 @@ export function parseShadowDefinition(source: string, sourcePath: string): Shado
   const id = optionalString(parsed, 'id') ?? stem
   if (!SHADOW_ID_PATTERN.test(id)) throw new Error(`id must match ${String(SHADOW_ID_PATTERN)}`)
   const name = optionalString(parsed, 'name') ?? id
+  if (/\r|\n/u.test(name)) throw new Error('name must be a single line')
   const prompt = normalized.slice(closing + '\n---\n'.length).trim()
   if (prompt === '') throw new Error('Markdown body must be non-empty')
 

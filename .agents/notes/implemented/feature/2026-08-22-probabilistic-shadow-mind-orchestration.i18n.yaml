@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-22-probabilistic-shadow-mind-orchestration.md
-2026-08-22-probabilistic-shadow-mind-orchestration.md: 6a373a7603c2f571bc902bf33542fbd6c2caf9d0
-2026-08-22-probabilistic-shadow-mind-orchestration.zh.md: 48eebeb51aca3155b3c500701d5569311ab70a17
+2026-08-22-probabilistic-shadow-mind-orchestration.md: 295e6135cba5b9a22427c36a7fa3fd1657c3b1a3
+2026-08-22-probabilistic-shadow-mind-orchestration.zh.md: 13f53828ddaa8790dca91d67dc63aa3b7ba3b0d7

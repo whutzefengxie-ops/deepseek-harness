@@ -10,7 +10,7 @@ Shadow Mind 的 Web 管理界面，位于**设置 → 插件 → Shadow Mind**�
 
 同级的**插件列表**标签会报告 Shadow Mind 运行时、管理工具和浏览器配置项是否启用及已挂载。本包自己的标签会显示自动调度和每个 Shadow 定义是否启用。
 
-全局表单编辑心跳概率、每 root 并发数、超时、报告批处理、模型与推理强度默认值、参数披露、确定性随机种子、prompt／报告限制、vendor 偏好、谓词阈值、value-loop 观察、停滞窗口与冷却、effort 提升、软硬预算、节省路由、重复衰减和冲突综合。保存使用 revision 设栅的 settings 文档，并实时生效。清除可选字段会恢复继承 bundle 配置或 root Agent。表单会在保存前强制执行运行时的跨字段窗口与预算关系。
+全局表单编辑心跳概率、每 root 并发数、超时、报告批处理、模型与推理强度默认值、参数披露、确定性随机种子、prompt／报告限制、vendor 偏好、谓词阈值、value-loop 观察、停滞窗口与冷却、effort 提升、软硬预算、节省路由、重复衰减和冲突综合。每次保存都会在一次 revision 设栅的 settings 修改中原子应用所有变更或清除字段，并实时生效。清除可选字段会恢复继承 bundle 配置或 root Agent。表单会在保存前强制执行运行时的跨字段窗口与预算关系。
 
 Shadow Agents 区域列出 `$DSH_HOME/shadow-minds/*.md`，显示准确的定义目录和源文件，报告隔离的定义错误，并支持创建、完整编辑、启用、停用和删除。每个表单包含定义 id、显示名称、enabled/debug 标志、激活概率、root 模型过滤器、运行模型、推理强度、超时、额外工具、截获范围、上下文继承、think-first 规划、具名 prefilter 与 boost、boost factor、holdout 模式和 Markdown 职责。删除会保留 Shadow 调试日志。页面绝不显示或编辑 holdout literal；它们只保留在 owner-only 运行时 sidecar。
 

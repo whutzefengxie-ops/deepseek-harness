@@ -10,7 +10,7 @@
 
 `list_shadows` 与 `get_shadow_config` 只读。每次创建、更新、启用、禁用、删除或 settings 写入都会使用精确的调用 agent、工具名称、call id、signal 和人类可读原因调用 `ctx.approval.request()`。只有 `allowed-once` 会提交变更；拒绝、不可用、取消或更宽泛的结果都会失败，且不会更改磁盘或 settings。非 agent 调用方无法变更配置。
 
-定义输出是稳定的格式化 JSON，并省略源路径。创建操作默认令 `enabled` 为 true、`debug` 为 false、`activation_probability` 为 `0.3`、`capture` 为 `full`、`context` 为 `standard`、`think_first` 与 `holdout` 为 false、`boost_factor` 为 `1`，数组字段为空。创建与更新 schema 还公开具名 prefilter 与 boost。Holdout literal 被刻意排除：它们只存在于 owner 侧 sidecar，没有任何工具读取或写入它们。`update_shadow` 要求至少提供一个字段。删除会移除定义，但保留其运行时调试日志。`update_shadow_config` 要求至少提供一项设置，并通过运行时 schema 验证公开全部实时调度、检测器、value-loop、预算、衰减与综合字段。
+定义输出是稳定的格式化 JSON，并省略源路径。创建操作默认令 `enabled` 为 true、`debug` 为 false、`activation_probability` 为 `0.3`、`capture` 为 `full`、`context` 为 `standard`、`think_first` 与 `holdout` 为 false、`boost_factor` 为 `1`，数组字段为空。创建与更新 schema 还公开具名 prefilter 与 boost。Holdout literal 被刻意排除：它们只存在于 owner 侧 sidecar，没有任何工具读取或写入它们。`update_shadow` 要求至少提供一个字段。删除会移除定义，但保留其运行时调试日志。`update_shadow_config` 要求至少提供一项设置，并通过运行时 schema 验证公开全部实时调度、检测器、value-loop、预算、衰减与综合字段。`null` 会移除可选用户覆盖；一次调用原子应用所有已提供 settings，因此可以一起重置关联预算字段。
 
 8 个工具都使用通用卡片。读取操作声明 read 展示；变更操作声明 execute 展示。注册项是 Cordis effect，并在插件卸载时消失。
 

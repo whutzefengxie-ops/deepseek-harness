@@ -1063,6 +1063,10 @@ describe('headless stream-json snapshots', () => {
         if (parent === undefined || children.length !== 4) throw new Error('missing persisted Shadow root or child logs')
 
         const parentRecords = parseJsonl(parent.content)
+        const parentText = JSON.stringify(parentRecords)
+        expect(parentText).toContain('"name":"update_shadow_config"')
+        expect(parentText).toContain('"defaultShadowModel":{"oneOf":[{"type":"string"},{"type":"null"}]')
+        expect(parentText).toContain('"sessionShadowSoftBudgetChars":{"oneOf":[{"type":"number"},{"type":"null"}]')
         expect(parentRecords.filter(record => record.type === 'tool/call').map((record) => {
           return (record.data as JsonObject | undefined)?.name
         })).toEqual(['read'])

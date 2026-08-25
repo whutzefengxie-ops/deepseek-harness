@@ -180,6 +180,24 @@ export interface ShadowMindSettings {
   readonly conflictSynthesisTimeoutSeconds: number
 }
 
+/** Partial live-settings write; null removes one optional user override. */
+export type UpdateShadowMindSettings = Partial<Omit<
+  ShadowMindSettings,
+  | 'defaultShadowModel'
+  | 'defaultReasoningEffort'
+  | 'randomSeed'
+  | 'sessionShadowSoftBudgetChars'
+  | 'sessionShadowHardBudgetChars'
+  | 'frugalShadowModel'
+>> & {
+  readonly defaultShadowModel?: string | null
+  readonly defaultReasoningEffort?: string | null
+  readonly randomSeed?: number | null
+  readonly sessionShadowSoftBudgetChars?: number | null
+  readonly sessionShadowHardBudgetChars?: number | null
+  readonly frugalShadowModel?: string | null
+}
+
 /** Runtime plugin configuration. */
 export interface ShadowMindConfig extends Partial<ShadowMindSettings> {
   /** Harness home used for definitions and debug logs. */

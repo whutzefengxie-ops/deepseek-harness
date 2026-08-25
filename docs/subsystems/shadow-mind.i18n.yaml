@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/shadow-mind.md
-shadow-mind.md: 4fc4d970e78e005065b2be548f9ae95d1a995bae
-shadow-mind.zh.md: 8eb423d3cb0d65e1d10d0201c010a3bef62e2253
+shadow-mind.md: 99c6bb7d053f9521e19e81a01649d0a86a23d22e
+shadow-mind.zh.md: 27a0e7a9e9323f27d0308098aed6393208350964

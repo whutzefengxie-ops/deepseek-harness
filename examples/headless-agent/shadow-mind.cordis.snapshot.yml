@@ -26,6 +26,10 @@
               headlessDrainTimeoutSeconds: 15
               conflictSynthesisEnabled: true
               conflictSynthesisTimeoutSeconds: 5
+          - id: commands
+            name: '@deepseek-ai/dsh-commands'
+          - id: tool-shadow-mind
+            name: '@deepseek-ai/dsh-tool-shadow-mind'
 
 - id: approval
   name: '@deepseek-ai/dsh-user-approval'

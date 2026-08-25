@@ -250,13 +250,13 @@ describe('ShadowMindSettingsTab', () => {
       target: { value: '0.75' },
     })
     fireEvent.click(screen.getByRole('button', { name: en.saveSettings }))
-    expect((await screen.findByRole('button', { name: en.saving }) as HTMLButtonElement).disabled).toBe(true)
+    expect((await screen.findByRole<HTMLButtonElement>('button', { name: en.saving })).disabled).toBe(true)
     await act(async () => { finishSave() })
     expect(await screen.findByText(en.saved)).toBeTruthy()
 
     settingsReady = false
     view.rerender(<ShadowMindSettingsTab {...editableProps} />)
-    expect((screen.getByRole('button', { name: en.discard }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.discard }).disabled).toBe(true)
   })
 
   it('shows disconnected and refresh failures without issuing a status request', async () => {
@@ -340,7 +340,7 @@ describe('ShadowMindSettingsTab', () => {
     }
     const resume = vi.fn(() => Promise.resolve(completed))
     const pause = vi.fn(() => Promise.reject(new Error('pause failed')))
-    const toggle = vi.fn(() => Promise.reject('toggle failed'))
+    const toggle = vi.fn(() => Promise.reject(new Error('toggle failed')))
     const catalog = () => Promise.resolve({
       definitionRoot: 'C:/dsh/shadow-minds',
       definitions: [],

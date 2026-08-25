@@ -2017,6 +2017,11 @@
     },
     {
       "doc": "docs/subsystems/shadow-mind.md",
+      "symbol": "UpdateShadowMindSettings",
+      "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/shadow-mind.md",
       "symbol": "ShadowMindConfig",
       "source": "packages/shadow-mind/shadow-mind-runtime/src/types.ts"
     },

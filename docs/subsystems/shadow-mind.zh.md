@@ -170,7 +170,7 @@ Holdout literal 只存在于 owner 可读的 `$DSH_HOME/shadow-minds/holdout-key
 
 ## 设置与状态
 
-实时 `shadow-mind` settings namespace 依次解析 schema 默认值、插件配置基值和用户覆盖。`dshHome` 只属于插件配置；它选择存放定义与调试日志的 Harness home，不能通过该 namespace 作为用户设置编辑。Web profile 会在**设置 → 插件 → Shadow Mind**公开可由用户编辑的字段。
+实时 `shadow-mind` settings namespace 依次解析 schema 默认值、插件配置基值和用户覆盖。一次运行时 settings 更新会原子设置已提供字段，并移除以 `null` 表示的可选用户覆盖。`dshHome` 只属于插件配置；它选择存放定义与调试日志的 Harness home，不能通过该 namespace 作为用户设置编辑。Web profile 会在**设置 → 插件 → Shadow Mind**公开可由用户编辑的字段。
 
 ```ts type-equiv
 /** Live scheduling and projection settings owned by the user. */
@@ -239,6 +239,26 @@ interface ShadowMindSettings {
   readonly conflictSynthesisEnabled: boolean
   /** Deadline for the additional conflict-synthesis run. */
   readonly conflictSynthesisTimeoutSeconds: number
+}
+```
+
+```ts type-equiv
+/** Partial live-settings write; null removes one optional user override. */
+type UpdateShadowMindSettings = Partial<Omit<
+  ShadowMindSettings,
+  | 'defaultShadowModel'
+  | 'defaultReasoningEffort'
+  | 'randomSeed'
+  | 'sessionShadowSoftBudgetChars'
+  | 'sessionShadowHardBudgetChars'
+  | 'frugalShadowModel'
+>> & {
+  readonly defaultShadowModel?: string | null
+  readonly defaultReasoningEffort?: string | null
+  readonly randomSeed?: number | null
+  readonly sessionShadowSoftBudgetChars?: number | null
+  readonly sessionShadowHardBudgetChars?: number | null
+  readonly frugalShadowModel?: string | null
 }
 ```
 
@@ -440,10 +460,11 @@ deleteDefinition(id: string): Promise<void>
 currentSettings(): ShadowMindSettings
 
 /**
- * Persist a partial user-settings patch.
- * @param patch Settings fields to replace.
+ * Atomically persist selected settings; null removes an optional user override.
+ * @param patch Settings fields to set or clear.
+ * @returns A promise settled after the settings mutation commits.
  */
-updateSettings(patch: Partial<ShadowMindSettings>): Promise<void>
+updateSettings(patch: UpdateShadowMindSettings): Promise<void>
 
 /**
  * Return per-root orchestration status without creating state for an untouched root.

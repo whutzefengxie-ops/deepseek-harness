@@ -105,7 +105,7 @@ Prompt 与已接受报告字符累计到 root 的 Session 预算。越过软上�
 
 ## 服务 API
 
-`listDefinitions()`、`createDefinition()`、`updateDefinition()`、`setEnabled()` 和 `deleteDefinition()` 公开定义注册表。`currentSettings()` 与 `updateSettings()` 访问实时 settings namespace。`status()`、`pause()`、`resume()` 和 `toggle()` 只接受 root agent；暂停会取消已准入工作，但不编辑全局定义。状态会保留已准入运行和 prefilter 计数、最近终态及 deliberation 大小、有效概率、value-loop 计数、消耗与预算层级、冷却、待处理提升、近期报告元数据和综合总数。近期报告刻意省略报告文本，并有界保留被综合替换的条目。
+`listDefinitions()`、`createDefinition()`、`updateDefinition()`、`setEnabled()` 和 `deleteDefinition()` 公开定义注册表。`currentSettings()` 读取实时 settings namespace；`updateSettings()` 原子设置已提供字段，并接受 `null` 来移除可选用户覆盖。`status()`、`pause()`、`resume()` 和 `toggle()` 只接受 root agent；暂停会取消已准入工作，但不编辑全局定义。状态会保留已准入运行和 prefilter 计数、最近终态及 deliberation 大小、有效概率、value-loop 计数、消耗与预算层级、冷却、待处理提升、近期报告元数据和综合总数。近期报告刻意省略报告文本，并有界保留被综合替换的条目。
 
 生成的 `shadowMind` Remote namespace 为受信任的浏览器管理提供 `catalog`、`create`、`update`、`setEnabled` 和 `delete`。其中 `status`、`pause`、`resume` 和 `toggle` 通过标准 Agent 查找策略解析指定的 root Session。
 

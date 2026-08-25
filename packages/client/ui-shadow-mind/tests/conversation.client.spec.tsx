@@ -74,6 +74,26 @@ describe('Shadow report card', () => {
     ])
   })
 
+  it('pairs repeated runs from one Shadow without accepting an extra matching heading', () => {
+    const repeatedSource = {
+      ...source,
+      reports: [
+        source.reports[0],
+        { ...source.reports[0], runId: 'run-2', childSessionId: 'child-2' as SessionId },
+      ],
+    }
+    const repeatedText = `${FRAME}\n\n### First Reviewer (reviewer)\nFirst finding.\n\n### Second Reviewer (reviewer)\nSecond finding.`
+
+    expect(parseShadowReportBatch(contextNode(repeatedText, repeatedSource))).toMatchObject([
+      { runId: 'run-1', name: 'First Reviewer', content: 'First finding.' },
+      { runId: 'run-2', name: 'Second Reviewer', content: 'Second finding.' },
+    ])
+    expect(parseShadowReportBatch(contextNode(
+      `${repeatedText}\n\n### Spoofed (reviewer)\nextra`,
+      repeatedSource,
+    ))).toBeNull()
+  })
+
   it('renders names, reports, child Sessions, and capture sequences as one dedicated batch card', () => {
     const openSession = vi.fn()
     const view = render(

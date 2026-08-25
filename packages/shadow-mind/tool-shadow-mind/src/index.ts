@@ -8,8 +8,8 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {
   CreateShadowDefinition,
   ShadowDefinition,
-  ShadowMindSettings,
   UpdateShadowDefinition,
+  UpdateShadowMindSettings,
 } from '@deepseek-ai/dsh-shadow-mind-runtime'
 
 /** Cordis plugin name. */
@@ -329,10 +329,19 @@ export function apply(ctx: Context): void {
       defaultShadowTimeoutSeconds: { type: 'number', description: 'Positive default run deadline.' },
       headlessDrainTimeoutSeconds: { type: 'number', description: 'Positive headless convergence deadline.' },
       resultBatchWindowMs: { type: 'number', description: 'Non-negative report batching window.' },
-      defaultShadowModel: { type: 'string', description: 'Fallback provider/model route.' },
-      defaultReasoningEffort: { type: 'string', description: 'Fallback adapter-owned reasoning effort.' },
+      defaultShadowModel: {
+        oneOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'Fallback provider/model route; null clears the user override.',
+      },
+      defaultReasoningEffort: {
+        oneOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'Fallback adapter-owned reasoning effort; null clears the user override.',
+      },
       argumentDisclosure: { type: 'string', enum: ['redacted', 'full'], description: 'Tool-call argument projection policy.' },
-      randomSeed: { type: 'number', description: 'Deterministic scheduler seed.' },
+      randomSeed: {
+        oneOf: [{ type: 'number' }, { type: 'null' }],
+        description: 'Deterministic scheduler seed; null clears the user override.',
+      },
       maxPromptChars: { type: 'number', description: 'Positive complete prompt bound.' },
       maxReportChars: { type: 'number', description: 'Positive accepted report bound.' },
       preferIndependentVendor: { type: 'boolean', description: 'Prefer independently-vendored candidate routes when at least two remain.' },
@@ -354,9 +363,18 @@ export function apply(ctx: Context): void {
         description: 'Ordered unique reasoning-effort rung names.',
         items: { type: 'string' },
       },
-      sessionShadowSoftBudgetChars: { type: 'number', description: 'Character spend that activates the frugal route.' },
-      sessionShadowHardBudgetChars: { type: 'number', description: 'Character spend that stops new Shadow runs.' },
-      frugalShadowModel: { type: 'string', description: 'Provider/model route used after the soft budget.' },
+      sessionShadowSoftBudgetChars: {
+        oneOf: [{ type: 'number' }, { type: 'null' }],
+        description: 'Character spend that activates the frugal route; null clears the user override.',
+      },
+      sessionShadowHardBudgetChars: {
+        oneOf: [{ type: 'number' }, { type: 'null' }],
+        description: 'Character spend that stops new Shadow runs; null clears the user override.',
+      },
+      frugalShadowModel: {
+        oneOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'Provider/model route used after the soft budget; null clears the user override.',
+      },
       staleReportDecay: { type: 'number', description: 'Repeated-envelope probability decay from 0 through 1.' },
       conflictSynthesisEnabled: { type: 'boolean', description: 'Replace one conflicting report pair with one synthesis.' },
       conflictSynthesisTimeoutSeconds: { type: 'number', description: 'Positive synthesis deadline.' },
@@ -364,7 +382,7 @@ export function apply(ctx: Context): void {
     output: textOutput(),
     execute: async (args, exec) => {
       const entries = Object.entries(args as Record<string, unknown>).filter(([, value]) => value !== undefined)
-      const patch = Object.fromEntries(entries) as Partial<ShadowMindSettings>
+      const patch = Object.fromEntries(entries) as UpdateShadowMindSettings
       if (Object.keys(patch).length === 0) throw new Error('update_shadow_config requires at least one setting')
       await approve(ctx, exec, 'Update Shadow Mind scheduling configuration')
       await ctx.shadowMind.updateSettings(patch)

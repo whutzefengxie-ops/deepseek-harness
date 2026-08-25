@@ -69,6 +69,7 @@ describe('parseShadowDefinition', () => {
     ['---\nid: a\ntimeout_seconds: 0\n---\nbody', 'timeout_seconds'],
     ['---\nid: a\ntools: [Bad Tool]\n---\nbody', 'tool'],
     ['---\nid: a\nname: 1\n---\nbody', 'name must be a non-empty string'],
+    ['---\nid: a\nname: |\n  first\n  second\n---\nbody', 'name must be a single line'],
     ['---\nid: a\nenabled: yes\n---\nbody', 'enabled must be a boolean'],
     ['---\nid: a\ntools: value\n---\nbody', 'array of non-empty strings'],
     ['---\nid: a\ntools: [read, ""]\n---\nbody', 'array of non-empty strings'],

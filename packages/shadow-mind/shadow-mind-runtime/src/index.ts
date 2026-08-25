@@ -12,7 +12,7 @@ import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
+import type { SettingsPathOp, SettingsScope } from '@deepseek-ai/dsh-settings'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { SubagentRun, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -55,6 +55,7 @@ import type {
   ShadowRunOutcome,
   ShadowVerdict,
   UpdateShadowDefinition,
+  UpdateShadowMindSettings,
 } from './types.ts'
 import type {} from './protocol.ts'
 
@@ -505,11 +506,17 @@ export class ShadowMindRuntime extends TypertRemoteService {
   }
 
   /**
-   * Persist a partial user-settings patch.
-   * @param patch Settings fields to replace.
+   * Atomically persist selected settings; null removes an optional user override.
+   * @param patch Settings fields to set or clear.
+   * @returns A promise settled after the settings mutation commits.
    */
-  updateSettings(patch: Partial<ShadowMindSettings>): Promise<void> {
-    return this.settingsScope.update(patch)
+  updateSettings(patch: UpdateShadowMindSettings): Promise<void> {
+    const ops: SettingsPathOp[] = Object.entries(patch)
+      .map(([key, value]) => value === null
+        ? { op: 'unset', path: [key] }
+        : { op: 'set', path: [key], value })
+    if (ops.length === 0) return Promise.resolve()
+    return this.ctx.settings.mutate(SHADOW_MIND_SETTINGS_NAMESPACE, ops)
   }
 
   /**
@@ -816,7 +823,9 @@ export class ShadowMindRuntime extends TypertRemoteService {
   ): void {
     /* v8 ignore if -- scheduleTurn rechecks acceptance immediately before this synchronous call,
      * and selection excludes active unique ids. */
-    if (!this.accepts(agent, state, epoch) || state.active.has(definition.id)) return
+    if (!this.accepts(agent, state, epoch)
+      || this.budgetTier(state) === 'exhausted'
+      || state.active.has(definition.id)) return
     const frugalRoute = this.budgetTier(state) === 'frugal'
       ? this.settingsValue.frugalShadowModel
       : undefined
@@ -1169,6 +1178,10 @@ export class ShadowMindRuntime extends TypertRemoteService {
       )
     } catch (error: unknown) {
       await this.recordSynthesisFailure(state, conflict, 'prompt_invalid', error)
+      return accepted
+    }
+    if (this.budgetTier(state) === 'exhausted') {
+      await this.recordSynthesisFailure(state, conflict, 'budget_exhausted')
       return accepted
     }
     state.spentChars += prompt.length

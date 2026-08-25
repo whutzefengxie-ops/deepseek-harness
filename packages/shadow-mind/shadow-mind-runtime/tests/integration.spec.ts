@@ -865,6 +865,40 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
     expect(ctx.shadowMind.status(root)).toMatchObject({ spentChars: 0, budgetTier: 'standard' })
   })
 
+  it('rechecks the hard budget after an in-flight catalog read', async () => {
+    const provider = resultProvider({
+      output: [],
+      stopReason: 'completed',
+      structured: { status: 'silent', content: '' },
+    })
+    const start = vi.spyOn(provider, 'start')
+    const { ctx, root } = await setup([], {
+      provider,
+      config: { sessionShadowHardBudgetChars: 1_000_000 },
+    })
+
+    appendManualToolTurn(root, 1)
+    await vi.waitFor(() => { expect(ctx.shadowMind.status(root).totalRuns).toBe(1) })
+    await vi.waitFor(() => { expect(ctx.shadowMind.status(root).active).toEqual([]) })
+    const spent = ctx.shadowMind.status(root).spentChars
+    const catalog = await ctx.shadowMind.registry.list()
+    const pending = Promise.withResolvers<typeof catalog>()
+    vi.spyOn(ctx.shadowMind.registry, 'list').mockReturnValueOnce(pending.promise)
+
+    appendManualToolTurn(root, 2)
+    await vi.waitFor(() => { expect(ctx.shadowMind.status(root).pendingSchedules).toBe(1) })
+    await ctx.shadowMind.updateSettings({ sessionShadowHardBudgetChars: spent })
+    pending.resolve(catalog)
+    await vi.waitFor(() => { expect(ctx.shadowMind.status(root).pendingSchedules).toBe(0) })
+
+    expect(start).toHaveBeenCalledOnce()
+    expect(ctx.shadowMind.status(root)).toMatchObject({
+      totalRuns: 1,
+      spentChars: spent,
+      budgetTier: 'exhausted',
+    })
+  })
+
   it('expires stagnation cooldowns by wall clock and clears them on pause or resume', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_000)
     const provider = resultProvider({
@@ -1274,10 +1308,34 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
     expect(ctx.shadowMind.toggle(root).paused).toBe(true)
     expect(ctx.shadowMind.resume(root).paused).toBe(false)
     expect(ctx.shadowMind.currentSettings().randomSeed).toBeUndefined()
+    await ctx.shadowMind.updateSettings({})
+    expect(ctx.shadowMind.currentSettings().randomSeed).toBeUndefined()
     await ctx.shadowMind.updateSettings({ randomSeed: 17, maxParallelShadows: 2 })
     expect(ctx.shadowMind.currentSettings()).toMatchObject({ randomSeed: 17, maxParallelShadows: 2 })
     await ctx.shadowMind.updateSettings({ randomSeed: 18 })
     expect(ctx.shadowMind.currentSettings().randomSeed).toBe(18)
+    await ctx.shadowMind.updateSettings({
+      sessionShadowSoftBudgetChars: 10_000,
+      sessionShadowHardBudgetChars: 20_000,
+      frugalShadowModel: 'mock/frugal',
+    })
+    await expect(ctx.shadowMind.updateSettings({ sessionShadowSoftBudgetChars: null }))
+      .rejects.toThrow('frugalShadowModel requires sessionShadowSoftBudgetChars')
+    expect(ctx.shadowMind.currentSettings()).toMatchObject({
+      sessionShadowSoftBudgetChars: 10_000,
+      sessionShadowHardBudgetChars: 20_000,
+      frugalShadowModel: 'mock/frugal',
+    })
+    await ctx.shadowMind.updateSettings({
+      randomSeed: null,
+      sessionShadowSoftBudgetChars: null,
+      sessionShadowHardBudgetChars: null,
+      frugalShadowModel: null,
+    })
+    expect(ctx.shadowMind.currentSettings()).not.toHaveProperty('randomSeed')
+    expect(ctx.shadowMind.currentSettings()).not.toHaveProperty('sessionShadowSoftBudgetChars')
+    expect(ctx.shadowMind.currentSettings()).not.toHaveProperty('sessionShadowHardBudgetChars')
+    expect(ctx.shadowMind.currentSettings()).not.toHaveProperty('frugalShadowModel')
     await ctx.shadowMind.updateSettings({ maxParallelShadows: 3 })
     expect(ctx.shadowMind.currentSettings().maxParallelShadows).toBe(3)
     await ctx.shadowMind.updateSettings({ valueLoopEnabled: false })
@@ -1851,6 +1909,53 @@ describe('Shadow Mind over the real root loop and spawn provider', () => {
     expect(debug).toContain('prompt_invalid')
     expect(debug).toContain('budget_exhausted')
     expect(debug).not.toContain('original report')
+  })
+
+  it('rechecks the hard budget after synthesis preparation', async () => {
+    const provider = resultProvider({
+      output: [],
+      stopReason: 'completed',
+      structured: { status: 'report', content: 'synthesized', verdict: 'challenge', refs: [] },
+    })
+    const start = vi.spyOn(provider, 'start')
+    const { ctx, root } = await setup([], {
+      provider,
+      config: { conflictSynthesisEnabled: true, sessionShadowHardBudgetChars: 1 },
+    })
+    await ctx.shadowMind.createDefinition({
+      id: 'synthesizer',
+      name: 'Conflict synthesizer',
+      enabled: true,
+      debug: false,
+      activationProbability: 0,
+      activeForModels: ['never/*'],
+      tools: [],
+      prompt: 'Choose one side.',
+    })
+    ctx.shadowMind.resume(root)
+    const runtime = ctx.shadowMind as unknown as RuntimeProbe
+    const state = runtime.owners.get(root)!
+    const followup = vi.spyOn(root, 'followup').mockImplementation(() => undefined)
+    const catalog = await ctx.shadowMind.registry.list()
+    const pending = Promise.withResolvers<typeof catalog>()
+    vi.spyOn(ctx.shadowMind.registry, 'list').mockReturnValueOnce(pending.promise)
+
+    const delivery = runtime.deliver(root, state, [
+      acceptedReport(state.epoch, 'challenge-run', 'challenge', 0.8),
+      acceptedReport(state.epoch, 'confirm-run', 'confirm', 0.7),
+    ])
+    state.spentChars = 1
+    pending.resolve(catalog)
+    await delivery
+
+    expect(start).not.toHaveBeenCalled()
+    expect(followup).toHaveBeenCalledOnce()
+    expect(ctx.shadowMind.status(root)).toMatchObject({
+      synthesisRuns: 0,
+      synthesisFailures: 1,
+      lastSynthesisFailure: 'budget_exhausted',
+      budgetTier: 'exhausted',
+    })
   })
 
   it('fails synthesis open for an oversized synthesized report', async () => {

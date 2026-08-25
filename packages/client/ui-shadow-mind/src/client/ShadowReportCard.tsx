@@ -70,18 +70,26 @@ export function parseShadowReportBatch(node: ContextMessageNode): readonly Shado
   const source = shadowSource(node.source)
   const text = modelText(node.content)
   if (source === null || text === null) return null
+  const expectedCounts = new Map<string, number>()
+  for (const report of source.reports) {
+    expectedCounts.set(report.shadowId, (expectedCounts.get(report.shadowId) ?? 0) + 1)
+  }
+  const matchesById = new Map<string, RegExpMatchArray[]>()
+  for (const [shadowId, expected] of expectedCounts) {
+    const pattern = new RegExp(`\\n### ([^\\r\\n]+) \\(${escapeRegExp(shadowId)}\\)\\r?\\n`, 'gu')
+    const matches = [...text.matchAll(pattern)]
+    if (matches.length !== expected) return null
+    matchesById.set(shadowId, matches)
+  }
   const markers: Array<{ name: string; bodyStart: number; markerStart: number }> = []
   let cursor = 0
   for (const report of source.reports) {
-    const pattern = new RegExp(`\\n### ([^\\r\\n]+) \\(${escapeRegExp(report.shadowId)}\\)\\r?\\n`, 'gu')
-    const matches = [...text.matchAll(pattern)]
-    if (matches.length !== 1) return null
-    for (const match of matches) {
-      if (match.index < cursor) return null
-      const bodyStart = match.index + match[0].length
-      markers.push({ name: (match[1] as string).trim(), markerStart: match.index, bodyStart })
-      cursor = bodyStart
-    }
+    const match = matchesById.get(report.shadowId)?.shift()
+    const markerStart = match?.index
+    if (match === undefined || markerStart === undefined || markerStart < cursor) return null
+    const bodyStart = markerStart + match[0].length
+    markers.push({ name: (match[1] as string).trim(), markerStart, bodyStart })
+    cursor = bodyStart
   }
   const entries: ShadowReportCardEntry[] = []
   for (const [index, marker] of markers.entries()) {

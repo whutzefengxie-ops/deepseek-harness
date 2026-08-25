@@ -2061,7 +2061,7 @@ export interface ShadowMindSettings {
 }
 ```
 
-来源：[`packages/shadow-mind/shadow-mind-runtime/src/types.ts:184`](../packages/shadow-mind/shadow-mind-runtime/src/types.ts)
+来源：[`packages/shadow-mind/shadow-mind-runtime/src/types.ts:202`](../packages/shadow-mind/shadow-mind-runtime/src/types.ts)
 
 <a id="deepseek-aidsh-shell-env"></a>
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/shadow-mind/shadow-mind-runtime/README.md
-README.md: f328774a04bfb942f81b4a7c1b9f7161caf1370c
-README.zh.md: 790609808160f51484953fca11f49ddbf3292763
+README.md: 3b771d05d2703010bdbfcb5725599157403d6645
+README.zh.md: 765ffe0e1d0b4b6e42a69d4c099e1efa534a3727

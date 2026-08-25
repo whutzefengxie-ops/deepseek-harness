@@ -1902,12 +1902,26 @@ Update selected Shadow Mind scheduling settings. This changes local configuratio
       "description": "Non-negative report batching window."
     },
     "defaultShadowModel": {
-      "type": "string",
-      "description": "Fallback provider/model route."
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Fallback provider/model route; null clears the user override."
     },
     "defaultReasoningEffort": {
-      "type": "string",
-      "description": "Fallback adapter-owned reasoning effort."
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Fallback adapter-owned reasoning effort; null clears the user override."
     },
     "argumentDisclosure": {
       "type": "string",
@@ -1918,8 +1932,15 @@ Update selected Shadow Mind scheduling settings. This changes local configuratio
       ]
     },
     "randomSeed": {
-      "type": "number",
-      "description": "Deterministic scheduler seed."
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Deterministic scheduler seed; null clears the user override."
     },
     "maxPromptChars": {
       "type": "number",
@@ -1993,16 +2014,37 @@ Update selected Shadow Mind scheduling settings. This changes local configuratio
       }
     },
     "sessionShadowSoftBudgetChars": {
-      "type": "number",
-      "description": "Character spend that activates the frugal route."
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Character spend that activates the frugal route; null clears the user override."
     },
     "sessionShadowHardBudgetChars": {
-      "type": "number",
-      "description": "Character spend that stops new Shadow runs."
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Character spend that stops new Shadow runs; null clears the user override."
     },
     "frugalShadowModel": {
-      "type": "string",
-      "description": "Provider/model route used after the soft budget."
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Provider/model route used after the soft budget; null clears the user override."
     },
     "staleReportDecay": {
       "type": "number",

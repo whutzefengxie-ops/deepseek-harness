@@ -60,7 +60,7 @@ Pi 支持每 Shadow 模型、thinking level、超时、debug、定义与配置�
 
 ## 管理与 package 拓扑
 
-`packages/shadow-mind/shadow-mind-runtime` 提供 `@deepseek-ai/dsh-shadow-mind-runtime`、`ctx.shadowMind`、定义持久化、settings、调度、投影、child 所有权、批处理、`/shadow` 状态方法、受信任的管理 Remote 和持久化报告 invariant。`packages/shadow-mind/tool-shadow-mind` 提供 `@deepseek-ai/dsh-tool-shadow-mind`，注册 `/shadow status|pause|resume|toggle`，并贡献 8 个模型工具，用于列出、创建、更新、启用、禁用、删除、读取 settings 和更新 settings。变更要求精确的 `allowed-once` 批准结果。分离这些包允许部署只使用运行时，而不授予模型编辑权限。
+`packages/shadow-mind/shadow-mind-runtime` 提供 `@deepseek-ai/dsh-shadow-mind-runtime`、`ctx.shadowMind`、定义持久化、settings、调度、投影、child 所有权、批处理、`/shadow` 状态方法、受信任的管理 Remote 和持久化报告 invariant。`packages/shadow-mind/tool-shadow-mind` 提供 `@deepseek-ai/dsh-tool-shadow-mind`，注册 `/shadow status|pause|resume|toggle`，并贡献 8 个模型工具，用于列出、创建、更新、启用、禁用、删除、读取 settings 和更新 settings。Settings 更新会原子设置或移除已提供的用户覆盖，包括关联预算字段。变更要求精确的 `allowed-once` 批准结果。分离这些包允许部署只使用运行时，而不授予模型编辑权限。
 
 `packages/client/ui-shadow-mind` 提供 `@deepseek-ai/dsh-client-ui-shadow-mind`。它会挂载生成的 Remote contribution、编辑实时 settings namespace 与 Markdown 定义、控制当前所选 root、在活动工作结束后显示进程内最近运行证据、在会话中展示已接受报告及其 root follow-up，并把 `/shadow` 结果转换为 composer 提示，使结果在空白 Session 中仍然可见。`packages/bundle/shadow-mind` 提供可安装的 `@deepseek-ai/dsh-shadow-mind` patch 层。`dsh plugin --profile <profile> add @deepseek-ai/dsh-shadow-mind` 会在所选 profile 中记录依赖和组合包；patch 会依次挂载运行时、管理工具和 Web 管理界面。
 

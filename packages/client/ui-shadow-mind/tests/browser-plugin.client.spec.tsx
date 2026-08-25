@@ -105,6 +105,22 @@ async function bench() {
     }
   }
   const remote = new RemoteService(ctx)
+  const mutate = vi.fn(() => Promise.resolve({
+    result: {
+      ok: true as const,
+      value: {
+        ns: 'shadow-mind',
+        schema: {},
+        value: SETTINGS,
+        base: SETTINGS,
+        user: {},
+        applies: 'live' as const,
+        secrets: [],
+        revision: 1,
+      },
+    },
+  }))
+  ctx.provide('connection', { api: { settings: { mutate } } } as never)
   const settings = {
     getSnapshot: vi.fn<() => SettingsScopeSnapshot<ShadowMindSettings>>(() => ({
       status: 'ready' as const,
@@ -130,7 +146,7 @@ async function bench() {
     open: vi.fn(),
   }
   ctx.provide('sessions', sessions)
-  return { ctx, slots: ctx.slots, locale, remote, sessions, settings, shadowMind, unmount, notify, sessionId }
+  return { ctx, slots: ctx.slots, locale, mutate, remote, sessions, settings, shadowMind, unmount, notify, sessionId }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -149,7 +165,7 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('ui-shadow-mind browser plugin', () => {
   it('mounts its Remote, registers the Settings tab, and disposes both', async () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'sessions', 'remote', 'settingsScope', 'conversationEvents',
+      'connection', 'slots', 'locale', 'sessions', 'remote', 'settingsScope', 'conversationEvents',
     ])
     const b = await bench()
     declare(b.slots)
@@ -329,15 +345,99 @@ describe('ui-shadow-mind browser plugin', () => {
       conflictSynthesisEnabled: true,
     })
 
-    expect(b.settings.set).toHaveBeenCalledWith('longOutputBoostChars', 60_000)
-    expect(b.settings.set).toHaveBeenCalledWith('reasoningEffortLadder', ['low', 'high'])
-    expect(b.settings.set).toHaveBeenCalledWith('conflictSynthesisEnabled', true)
-    expect(b.settings.unset.mock.calls.map(([field]) => field)).toEqual([
-      'sessionShadowSoftBudgetChars',
-      'sessionShadowHardBudgetChars',
-      'frugalShadowModel',
-    ])
+    expect(b.mutate).toHaveBeenCalledWith({
+      ns: 'shadow-mind',
+      expectedRevision: 1,
+      ops: [
+        { op: 'set', path: ['longOutputBoostChars'], value: 60_000 },
+        { op: 'set', path: ['reasoningEffortLadder'], value: ['low', 'high'] },
+        { op: 'set', path: ['conflictSynthesisEnabled'], value: true },
+        { op: 'unset', path: ['sessionShadowSoftBudgetChars'] },
+        { op: 'unset', path: ['sessionShadowHardBudgetChars'] },
+        { op: 'unset', path: ['frugalShadowModel'] },
+      ],
+    })
 
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('saves mutually dependent budget settings in one revision-fenced mutation', async () => {
+    const b = await bench()
+    declare(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+
+    await injected.saveSettings({
+      ...SETTINGS,
+      sessionShadowSoftBudgetChars: 10_000,
+      sessionShadowHardBudgetChars: 20_000,
+      frugalShadowModel: 'deepseek/deepseek-chat',
+    })
+
+    expect(b.mutate).toHaveBeenCalledWith({
+      ns: 'shadow-mind',
+      expectedRevision: 0,
+      ops: [
+        { op: 'set', path: ['sessionShadowSoftBudgetChars'], value: 10_000 },
+        { op: 'set', path: ['sessionShadowHardBudgetChars'], value: 20_000 },
+        { op: 'set', path: ['frugalShadowModel'], value: 'deepseek/deepseek-chat' },
+      ],
+    })
+
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('omits an unavailable revision and reports a rejected atomic mutation', async () => {
+    const b = await bench()
+    declare(b.slots)
+    b.settings.getSnapshot.mockReturnValue({
+      status: 'ready',
+      value: SETTINGS,
+      base: SETTINGS,
+      user: {},
+      revision: undefined,
+      writable: true,
+      mode: 'host',
+    })
+    b.mutate.mockResolvedValueOnce({
+      result: {
+        ok: false,
+        error: { code: 'settings-rejected', message: 'budget fields must be configured together' },
+      },
+    } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+
+    await expect(injected.saveSettings({ ...SETTINGS, longOutputBoostChars: 60_000 }))
+      .rejects.toThrow(
+        'Shadow Mind settings save failed: settings-rejected: budget fields must be configured together',
+      )
+    expect(b.mutate).toHaveBeenCalledWith({
+      ns: 'shadow-mind',
+      ops: [{ op: 'set', path: ['longOutputBoostChars'], value: 60_000 }],
+    })
+
+    await fiber.dispose()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('skips an atomic mutation when the resolved form is unchanged', async () => {
+    const b = await bench()
+    declare(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('settings.plugins.tab')[0]!
+    const injected = (entry.inject as unknown as () => ShadowMindSettingsTabInjected)()
+
+    await injected.saveSettings(SETTINGS)
+
+    expect(b.mutate).not.toHaveBeenCalled()
     await fiber.dispose()
     await b.ctx.fiber.dispose()
   })

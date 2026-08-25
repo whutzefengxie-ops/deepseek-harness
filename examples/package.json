@@ -68,6 +68,7 @@
     "@deepseek-ai/dsh-session-title-first-prompt-llm": "workspace:*",
     "@deepseek-ai/dsh-settings-file": "workspace:*",
     "@deepseek-ai/dsh-shadow-mind-runtime": "workspace:*",
+    "@deepseek-ai/dsh-tool-shadow-mind": "workspace:*",
     "@deepseek-ai/dsh-skill": "workspace:*",
     "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
     "@deepseek-ai/dsh-spill-local": "workspace:*",

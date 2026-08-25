@@ -419,6 +419,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ShadowDiagnostic: 'shadow-mind.md',
   ShadowMindConfig: 'shadow-mind.md',
   ShadowMindSettings: 'shadow-mind.md',
+  UpdateShadowMindSettings: 'shadow-mind.md',
   ShadowMindStatus: 'shadow-mind.md',
   UpdateShadowDefinition: 'shadow-mind.md',
   ContinuableCreateRequest: 'subagent.md',

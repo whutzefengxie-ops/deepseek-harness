@@ -170,7 +170,7 @@ A target-free Conversation Definition folds `shadow-report` inputs into the owni
 
 ## Settings and status
 
-The live `shadow-mind` settings namespace resolves schema defaults, the plugin configuration base, and user overrides. `dshHome` belongs only to plugin configuration; it selects the Harness home containing definitions and debug logs and is not user-editable through that namespace. Web profiles expose the user-editable fields at **Settings → Plugins → Shadow Mind**.
+The live `shadow-mind` settings namespace resolves schema defaults, the plugin configuration base, and user overrides. One runtime settings update atomically sets supplied fields and removes optional user overrides represented by `null`. `dshHome` belongs only to plugin configuration; it selects the Harness home containing definitions and debug logs and is not user-editable through that namespace. Web profiles expose the user-editable fields at **Settings → Plugins → Shadow Mind**.
 
 ```ts type-equiv
 /** Live scheduling and projection settings owned by the user. */
@@ -239,6 +239,26 @@ interface ShadowMindSettings {
   readonly conflictSynthesisEnabled: boolean
   /** Deadline for the additional conflict-synthesis run. */
   readonly conflictSynthesisTimeoutSeconds: number
+}
+```
+
+```ts type-equiv
+/** Partial live-settings write; null removes one optional user override. */
+type UpdateShadowMindSettings = Partial<Omit<
+  ShadowMindSettings,
+  | 'defaultShadowModel'
+  | 'defaultReasoningEffort'
+  | 'randomSeed'
+  | 'sessionShadowSoftBudgetChars'
+  | 'sessionShadowHardBudgetChars'
+  | 'frugalShadowModel'
+>> & {
+  readonly defaultShadowModel?: string | null
+  readonly defaultReasoningEffort?: string | null
+  readonly randomSeed?: number | null
+  readonly sessionShadowSoftBudgetChars?: number | null
+  readonly sessionShadowHardBudgetChars?: number | null
+  readonly frugalShadowModel?: string | null
 }
 ```
 
@@ -440,10 +460,11 @@ deleteDefinition(id: string): Promise<void>
 currentSettings(): ShadowMindSettings
 
 /**
- * Persist a partial user-settings patch.
- * @param patch Settings fields to replace.
+ * Atomically persist selected settings; null removes an optional user override.
+ * @param patch Settings fields to set or clear.
+ * @returns A promise settled after the settings mutation commits.
  */
-updateSettings(patch: Partial<ShadowMindSettings>): Promise<void>
+updateSettings(patch: UpdateShadowMindSettings): Promise<void>
 
 /**
  * Return per-root orchestration status without creating state for an untouched root.

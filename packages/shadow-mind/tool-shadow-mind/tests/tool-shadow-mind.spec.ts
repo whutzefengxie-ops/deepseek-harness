@@ -13,6 +13,7 @@ import type {
   ShadowMindSettings,
   ShadowMindStatus,
   UpdateShadowDefinition,
+  UpdateShadowMindSettings,
 } from '@deepseek-ai/dsh-shadow-mind-runtime'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -90,8 +91,13 @@ class RuntimeStub {
     return this.settings
   }
 
-  updateSettings(patch: Partial<ShadowMindSettings>): Promise<void> {
-    this.settings = { ...this.settings, ...patch }
+  updateSettings(patch: UpdateShadowMindSettings): Promise<void> {
+    const next = { ...this.settings } as Record<string, unknown>
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) Reflect.deleteProperty(next, key)
+      else next[key] = value
+    }
+    this.settings = next as unknown as ShadowMindSettings
     return Promise.resolve()
   }
 
@@ -398,6 +404,20 @@ describe('Shadow Mind management tools and command', () => {
       frugalShadowModel: 'mock/frugal',
       conflictSynthesisEnabled: true,
     })
+    expect((await execute(ctx, agent, 'update_shadow_config', {
+      defaultShadowModel: null,
+      defaultReasoningEffort: null,
+      randomSeed: null,
+      sessionShadowSoftBudgetChars: null,
+      sessionShadowHardBudgetChars: null,
+      frugalShadowModel: null,
+    })).isError).toBe(false)
+    expect(runtime.settings).not.toHaveProperty('defaultShadowModel')
+    expect(runtime.settings).not.toHaveProperty('defaultReasoningEffort')
+    expect(runtime.settings).not.toHaveProperty('randomSeed')
+    expect(runtime.settings).not.toHaveProperty('sessionShadowSoftBudgetChars')
+    expect(runtime.settings).not.toHaveProperty('sessionShadowHardBudgetChars')
+    expect(runtime.settings).not.toHaveProperty('frugalShadowModel')
 
     expect(present(ctx, agent, 'list_shadows', {})).toEqual({ card: 'generic', title: 'List Shadow Minds', kind: 'read' })
     expect(present(ctx, agent, 'create_shadow', input)).toMatchObject({ title: 'Create Shadow full', rawInput: 'full' })

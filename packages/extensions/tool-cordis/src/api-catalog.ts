@@ -1698,9 +1698,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Live resolved settings snapshot.',
       },
       {
-        signature: 'updateSettings(patch: Partial<ShadowMindSettings>): Promise<void>',
-        description: 'Persist a partial user-settings patch.',
-        parameters: [{ name: 'patch', description: 'Settings fields to replace.' }],
+        signature: 'updateSettings(patch: UpdateShadowMindSettings): Promise<void>',
+        description: 'Atomically persist selected settings; null removes an optional user override.',
+        parameters: [{ name: 'patch', description: 'Settings fields to set or clear.' }],
+        returns: 'A promise settled after the settings mutation commits.',
       },
       {
         signature: '@Remote(\'status\') status(agent: Agent): ShadowMindStatus',
@@ -5105,6 +5106,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateShadowDefinition',
     declaration: 'export type UpdateShadowDefinition = Partial<Omit<CreateShadowDefinition, \'id\' | \'runWithModel\' | \'reasoningEffort\' | \'timeoutSeconds\'>> & {\n    readonly runWithModel?: string | undefined;\n    readonly reasoningEffort?: string | undefined;\n    readonly timeoutSeconds?: number | undefined;\n};',
+  },
+  {
+    name: 'UpdateShadowMindSettings',
+    declaration: 'export type UpdateShadowMindSettings = Partial<Omit<ShadowMindSettings, \'defaultShadowModel\' | \'defaultReasoningEffort\' | \'randomSeed\' | \'sessionShadowSoftBudgetChars\' | \'sessionShadowHardBudgetChars\' | \'frugalShadowModel\'>> & {\n    readonly defaultShadowModel?: string | null;\n    readonly defaultReasoningEffort?: string | null;\n    readonly randomSeed?: number | null;\n    readonly sessionShadowSoftBudgetChars?: number | null;\n    readonly sessionShadowHardBudgetChars?: number | null;\n    readonly frugalShadowModel?: string | null;\n};',
   },
   {
     name: 'UpdateTeamTaskRequest',

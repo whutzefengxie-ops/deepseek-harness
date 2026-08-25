@@ -706,6 +706,9 @@ importers:
       '@deepseek-ai/dsh-tool-session-query':
         specifier: workspace:*
         version: link:../packages/session-query/tool-session-query
+      '@deepseek-ai/dsh-tool-shadow-mind':
+        specifier: workspace:*
+        version: link:../packages/shadow-mind/tool-shadow-mind
       '@deepseek-ai/dsh-tool-skill':
         specifier: workspace:*
         version: link:../packages/skill/tool-skill
@@ -2816,6 +2819,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
         version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:^
+        version: link:../connection
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
